@@ -3,15 +3,17 @@
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
 
+import sys
+sys.path.pop(0)  # Ignore frozen bytecode for RAM tests
+import gc
 import uasyncio as asyncio
+gc.collect()
 import ujson
 import client
 from machine import Pin
 from local import TIMEOUT
 import gc
 
-#import sys
-#sys.path.pop(0)  # Ignore frozen bytecode for RAM tests
 
 class App():
     def __init__(self, verbose):
