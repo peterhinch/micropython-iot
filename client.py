@@ -2,6 +2,8 @@
 
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
+import sys
+sys.path.pop(0)  # Ignore frozen bytecode for RAM tests
 
 import gc
 gc.collect()
