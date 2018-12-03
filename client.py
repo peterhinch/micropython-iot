@@ -3,24 +3,39 @@
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
 
+import gc
+gc.collect()
+print(101, gc.mem_free())
 import usocket as socket
 import uasyncio as asyncio
 import network
 import utime
-import primitives as asyn  # Stripped-down asyn.py
+# Up to here RAM used by imports is virtually zero
+try:
+    import primitives as asyn  # Stripped-down asyn.py
+except ImportError:
+    import asyn
 # Get local config. ID is string of form '1\n'
 from local import *
+gc.collect()
+print(106, gc.mem_free())
 
 class Client():
     def __init__(self, loop, verbose, led):
+        gc.collect()
+        print(200, gc.mem_free())
         self.timeout = TIMEOUT  # Server timeout from local.py
         self.verbose = verbose
         self.led = led
         self._sta_if = network.WLAN(network.STA_IF)
         self._sta_if.active(True)
+        gc.collect()
+        print(201, gc.mem_free())
         ap = network.WLAN(network.AP_IF)
         ap.active(False)
         self.server = socket.getaddrinfo(SERVER, PORT)[0][-1]  # server read
+        gc.collect()
+        print(202, gc.mem_free())
         self.evfail = asyn.Event(100)  # 100ms pause
         self.evread = asyn.Event(100)
         self.evsend = asyn.Event(100)
@@ -28,6 +43,8 @@ class Client():
         self.connects = 0  # Connect count for test purposes/app access
         self.sock = None
         self.ok = False
+        gc.collect()
+        print(1, gc.mem_free())
         loop.create_task(self._run(loop))
 
 # **** API ****
@@ -82,14 +99,18 @@ class Client():
             try:
                 self.sock.connect(self.server)
                 self.sock.setblocking(False)
-                await self._send(self.sock, MY_ID)  # Can throw OSError
+                await self._send(MY_ID)  # Can throw OSError
             except OSError:
                 pass
             else:
                 self.evfail.clear()
+                gc.collect()
+                print('2', gc.mem_free())
                 loop.create_task(asyn.Cancellable(self._reader)())
                 loop.create_task(asyn.Cancellable(self._writer)())
                 loop.create_task(asyn.Cancellable(self._keepalive)())
+                gc.collect()
+                print('3', gc.mem_free())
                 self.ok = True  # TODO is this right? Should we wait for timeout+ ? Or event from ._readline
                 await self.evfail  # Pause until something goes wrong
                 self.ok = False
@@ -121,7 +142,7 @@ class Client():
             while True:
                 await self.evsend
                 async with self.lock:
-                    await self._send(self.sock, self.evsend.value())
+                    await self._send(self.evsend.value())
                 self.verbose and print('Sent data', self.evsend.value())
                 self.evsend.clear()
                 await asyncio.sleep(5)
@@ -137,7 +158,7 @@ class Client():
             while True:
                 await asyncio.sleep_ms(tim)
                 async with self.lock:
-                    await self._send(self.sock, '\n')
+                    await self._send('\n')
         except OSError:
             pass
         self.evfail.set()
@@ -165,10 +186,10 @@ class Client():
             if utime.ticks_diff(utime.ticks_ms(), start) > self.timeout:
                 raise OSError
  
-    async def _send(self, s, d):  # Write a line to either socket.
+    async def _send(self, d):  # Write a line to either socket.
         start = utime.ticks_ms()
         while len(d):
-            ns = s.send(d)  # OSError if client fails
+            ns = self.sock.send(d)  # OSError if client fails
             d = d[ns:]  # Possible partial write
             await asyncio.sleep_ms(100)
             if utime.ticks_diff(utime.ticks_ms(), start) > self.timeout:

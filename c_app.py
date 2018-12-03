@@ -8,6 +8,10 @@ import ujson
 import client
 from machine import Pin
 from local import TIMEOUT
+import gc
+
+#import sys
+#sys.path.pop(0)  # Ignore frozen bytecode for RAM tests
 
 class App():
     def __init__(self, verbose):
@@ -36,12 +40,14 @@ class App():
     # Send [approx application uptime in secs, (re)connect count]
     async def writer(self):
         self.verbose and print('Started writer')
-        data = [0, 0]
+        data = [0, 0, 0]
         count = 0
         while True:
             data[0] = self.cl.connects
             data[1] = count
             count += 1
+            gc.collect()
+            data[2] = gc.mem_free()
             print('Sent', data, 'to server app')
             print()
             # .write() behaves as per .readline()
