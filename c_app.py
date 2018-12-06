@@ -3,20 +3,18 @@
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
 
-import sys
-sys.path.pop(0)  # Ignore frozen bytecode for RAM tests
-
+import gc
 import uasyncio as asyncio
+gc.collect()
 import ujson
 import client
 from machine import Pin
 from local import TIMEOUT
-import gc
+
 
 class App():
-    def __init__(self, verbose):
+    def __init__(self, loop, verbose):
         self.verbose = verbose
-        loop = asyncio.get_event_loop()
         led = Pin(2, Pin.OUT, value = 1)  # Optional LED
         self.cl = client.Client(loop, verbose, led)
         loop.create_task(self.start(loop))
@@ -58,7 +56,7 @@ class App():
         self.cl.close()
 
 loop = asyncio.get_event_loop()
-app = App(True)
+app = App(loop, True)
 try:
     loop.run_forever()
 finally:

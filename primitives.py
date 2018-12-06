@@ -45,11 +45,9 @@ class Event():
         self._flag = False
         self._data = None
 
-    def __await__(self):
+    def __iter__(self):
         while not self._flag:
             await asyncio.sleep_ms(self.delay_ms)
-
-    __iter__ = __await__
 
     def is_set(self):
         return self._flag
@@ -69,7 +67,7 @@ class Barrier():
         self._args = args
         self._reset(True)
 
-    def __await__(self):
+    def __iter__(self):
         self._update()
         if self._at_limit():  # All other threads are also at limit
             if self._func is not None:
@@ -82,8 +80,6 @@ class Barrier():
             if direction != self._down:
                 return
             yield
-
-    __iter__ = __await__
 
     def trigger(self):
         self._update()
