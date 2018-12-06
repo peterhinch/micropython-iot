@@ -1,4 +1,4 @@
-# client_w.py Demo of a resilient asynchronous full-duplex ESP8266 client
+# client.py Client class for resilient asynchronous IOT communication link.
 
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
@@ -15,7 +15,7 @@ gc.collect()
 
 
 class Client():
-    def __init__(self, loop, verbose, led):
+    def __init__(self, loop, verbose=False, led=None):
         self.timeout = TIMEOUT  # Server timeout from local.py
         self.verbose = verbose
         self.led = led
@@ -49,14 +49,17 @@ class Client():
         self.evread.clear()
         return d
 
-    async def write(self, buf):
+    async def write(self, buf, pause=True):
         end = utime.ticks_add(self.timeout, utime.ticks_ms())
+        if not buf.endswith('\n'):
+            buf = ''.join((buf, '\n'))
         self.evsend.set(buf)  # Cleared after apparently succesful tx
         while self.evsend.is_set():
             await asyncio.sleep_ms(100)
-        dt = utime.ticks_diff(end, utime.ticks_ms())
-        if dt > 0:
-            await asyncio.sleep_ms(dt)  # Control tx rate: <= 1 msg per timeout period
+        if pause:
+            dt = utime.ticks_diff(end, utime.ticks_ms())
+            if dt > 0:
+                await asyncio.sleep_ms(dt)  # Control tx rate: <= 1 msg per timeout period
 
     def close(self):
         self.verbose and print('Closing sockets.')

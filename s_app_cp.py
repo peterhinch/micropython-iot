@@ -1,7 +1,8 @@
-#! /usr/bin/python3
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# s_app_cp.py Server-side application demo for CPython
+# s_app_cp.py Server-side application demo
+# Run under CPython 3.5 or later.
 
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
@@ -16,7 +17,7 @@ import server_cp as server
 
 class App():
     def __init__(self, loop, client_id):
-        self.data = [0, 0]  # Exchange a 2-list with remote
+        self.data = [0, 0, 0]  # Exchange a 3-list with remote
         loop.create_task(self.start(loop, client_id))
 
     async def start(self, loop, client_id):
@@ -28,12 +29,9 @@ class App():
     async def reader(self, conn, client_id):
         print('Started reader')
         while True:
-            # Attempt to read data: server times out if none arrives in timeout
-            # period closing the Connection. .readline() pauses until the
-            # connection is re-established.
-            line = await conn.readline()
+            line = await conn.readline()  # Pause in event of outage
             self.data = json.loads(line)
-            # Receives [restart count, uptime in secs]
+            # Receives [restart count, uptime in secs, mem_free]
             print('Got', self.data, 'from remote', client_id)
 
     # Send [approx application uptime in secs, received client uptime]
@@ -43,25 +41,22 @@ class App():
         while True:
             self.data[0] = count
             count += 1
-            print('Sent', self.data, 'to remote', client_id)
-            print()
+            print('Sent', self.data, 'to remote', client_id, '\n')
             # .write() behaves as per .readline()
-            await conn.write('{}\n'.format(json.dumps(self.data)))
+            await conn.write(json.dumps(self.data))
             await asyncio.sleep(5)
         
 
 def run():
     loop = asyncio.get_event_loop()
-    clients = [App(loop, n) for n in range(1, 5)]  # Accept 4 clients with ID's 1-4
+    clients = [App(loop, str(n)) for n in range(1, 5)]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, 10, True))
+        loop.run_until_complete(server.run(loop, 10, False))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
         print('Closing sockets')
-        for s in server.socks:
-            s.close()
+        server.Connection.close_all()
 
-run()
 if __name__ == "__main__":
     run()

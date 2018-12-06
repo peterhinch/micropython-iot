@@ -103,7 +103,6 @@ class Connection():
         self.timeout = TIMEOUT
         self.verbose = verbose
         Connection.conns[client_id] = self
-        # Startup timeout: cancel startup if both sockets not created in time
         self.lock = asyn.Lock(100)
         self.conn = None  # Socket
         loop.create_task(self._keepalive())

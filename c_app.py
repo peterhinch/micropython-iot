@@ -9,7 +9,6 @@ gc.collect()
 import ujson
 import client
 from machine import Pin
-from local import TIMEOUT
 
 
 class App():
@@ -46,10 +45,9 @@ class App():
             count += 1
             gc.collect()
             data[2] = gc.mem_free()
-            print('Sent', data, 'to server app')
-            print()
+            print('Sent', data, 'to server app\n')
             # .write() behaves as per .readline()
-            await self.cl.write('{}\n'.format(ujson.dumps(data)))
+            await self.cl.write(ujson.dumps(data))
             await asyncio.sleep(5)
         
     def close(self):
