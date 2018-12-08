@@ -260,8 +260,7 @@ def run():
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
-        for s in server.socks:
-            s.close()
+        server.Connection.close_all()
 
 if __name__ == "__main__":
     run()
@@ -292,7 +291,7 @@ Method (synchronous):
  1. `ok` Returns `True` if connectivity is present.
 
 Class Method (synchronous):
- 1.`close_all` No args. Closes all sockets: call on exception (e.g. ctrl-c).
+ 1. `close_all` No args. Closes all sockets: call on exception (e.g. ctrl-c).
 
 The `Connection` class is awaitable. If
 ```python
@@ -340,7 +339,7 @@ acknowledgement is not received in a certain period, re-send the packet.
 This provides qos==1. It does not provide qos==2: there is a remote chance that
 the acknowledge packet is lost, in which case the original packet will
 erroneously be retransmitted. One approach to handling this is to ignore
-incoming duplicate messages (as identified by their `message_id`
+incoming duplicate messages (as identified by their `message_id`).
 
 # 8. Notes on performance
 
@@ -355,17 +354,3 @@ This is defined in `local.py`. Its value should be common to all clients and
 the sever. It determines the time taken to detect an outage and the frequency
 of `keepalive` packets. In principle a reduced time will improve throughput
 however I have not tested values <1.5s.
-
-
-**TODO**
-
-ESP8266 compile: why is free RAM greater on compiled build compared to release build?
-
-Connect/disconnect callback could be done via user coro with something like
-```python
-while True:
-    await failure
-    fail_func(args)
-    await success
-    success_func(args)
-```
