@@ -17,33 +17,35 @@ import server_cp as server
 
 class App():
     def __init__(self, loop, client_id):
+        self.client_id = client_id  # This instance talks to this client
+        self.conn = None  # Connection instance
         self.data = [0, 0, 0]  # Exchange a 3-list with remote
-        loop.create_task(self.start(loop, client_id))
+        loop.create_task(self.start(loop))
 
-    async def start(self, loop, client_id):
-        print('Client {} Awaiting connection.'.format(client_id))
-        conn = await server.client_conn(client_id)
-        loop.create_task(self.reader(conn, client_id))
-        loop.create_task(self.writer(conn, client_id))
+    async def start(self, loop):
+        print('Client {} Awaiting connection.'.format(self.client_id))
+        self.conn = await server.client_conn(self.client_id)
+        loop.create_task(self.reader())
+        loop.create_task(self.writer())
 
-    async def reader(self, conn, client_id):
+    async def reader(self):
         print('Started reader')
         while True:
-            line = await conn.readline()  # Pause in event of outage
+            line = await self.conn.readline()  # Pause in event of outage
             self.data = json.loads(line)
             # Receives [restart count, uptime in secs, mem_free]
-            print('Got', self.data, 'from remote', client_id)
+            print('Got', self.data, 'from remote', self.client_id)
 
     # Send [approx application uptime in secs, received client uptime]
-    async def writer(self, conn, client_id):
+    async def writer(self):
         print('Started writer')
         count = 0
         while True:
             self.data[0] = count
             count += 1
-            print('Sent', self.data, 'to remote', client_id, '\n')
+            print('Sent', self.data, 'to remote', self.client_id, '\n')
             # .write() behaves as per .readline()
-            await conn.write(json.dumps(self.data))
+            await self.conn.write(json.dumps(self.data))
             await asyncio.sleep(5)
         
 

@@ -75,8 +75,8 @@ merely passes data between nodes and/or logs data to disk.
   4.1 [The Client class](./README.md#41-the-client-class)  
  5. [Server side applications](./README.md#5-server-side-applications)  
   5.1 [The server module](./README.md#51-the-server-module)  
- 6. [Ensuring resilience](./README.md#6-ensuring-resilience)  
- 7. [Quality of service](./README.md#7-quality-of-service)  
+ 6. [Ensuring resilience](./README.md#6-ensuring-resilience) Guidelines for application design.   
+ 7. [Quality of service](./README.md#7-quality-of-service) Guaranteeing message delivery.  
   7.1 [Using an acknowledge packet](./README.md#71-using-an-acknowledge-packet)  
   7.2 [Another approach](./README.md#72-another-approach)  
  8. [Performance](./README.md#8-performance)  
@@ -109,7 +109,7 @@ specified timeout an outage is declared. On the client the WiFi is disconnected
 and a reconnection procedure is initiated. On the server the connection is
 closed and it awaits a new connection.
 
-Each client has a unique ID which is stored in `local.py`. This enables the
+Each client has a unique ID which is stored in `local.py`. This ID enables the
 server application to determine which physical client is associated with an
 incoming connection.
 
