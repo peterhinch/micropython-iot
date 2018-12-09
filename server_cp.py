@@ -80,7 +80,7 @@ async def run(loop, nconns=10, verbose=False):
 
 # A Connection persists even if client dies (minimise object creation).
 # If client dies Connection is closed: ._close() flags this state by closing its
-# socket and setting .sock to None (.ok() == False).
+# socket and setting .sock to None (.status() == False).
 class Connection():
     conns = {}  # index: client_id. value: Connection instance
     server_sock = None
@@ -115,7 +115,7 @@ class Connection():
             await self
             buf = bytearray()
             start = time.time()
-            while self.ok():
+            while self.status():
                 try:
                     d = self.sock.recv(4096)
                 except socket.error as e:
@@ -138,23 +138,23 @@ class Connection():
                             buf = bytearray(l[-1].encode('utf8'))
                 await asyncio.sleep(0)
 
-    def ok(self):
+    def status(self):
         return self.sock is not None
 
     def __await__(self):
-        return self._is_ok().__await__()
+        return self._status_coro().__await__()
 
-    async def _is_ok(self):
-        while not self.ok():
+    async def _status_coro(self):
+        while not self.status():
             await asyncio.sleep(TIM_SHORT)
 
     async def readline(self):
         while True:
-            if self.verbose and not self.ok():
+            if self.verbose and not self.status():
                 print('Reader Client:', self.client_id, 'awaiting OK status')
             await self
             self.verbose and print('Reader Client:', self.client_id, 'OK')
-            while self.ok():
+            while self.status():
                 if len(self.lines):
                     line = self.lines.pop(0)
                     if len(line):  # Ignore keepalives
@@ -175,7 +175,7 @@ class Connection():
             if not buf.endswith('\n'):
                 buf = ''.join((buf, '\n'))
         while True:
-            if self.verbose and not self.ok():
+            if self.verbose and not self.status():
                 print('Writer Client:', self.client_id, 'awaiting OK status')
             await self
             self.verbose and print('Writer Client:', self.client_id, 'OK')
@@ -192,7 +192,7 @@ class Connection():
                 await asyncio.sleep(dt)  # Control tx rate: <= 1 msg per timeout period
 
     async def _send(self, d):
-        if not self.ok():
+        if not self.status():
             raise OSError
         d = d.encode('utf8')
         start = time.time()
