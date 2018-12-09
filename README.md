@@ -113,7 +113,7 @@ Each client has a unique ID which is stored in `local.py`. This enables the
 server application to determine which physical client is associated with an
 incoming connection.
 
-###### [Contents](./README#1-contents)
+###### [Contents](./README.md#1-contents)
 
 # 3. Files
 
@@ -155,7 +155,7 @@ must have a stored network connection to access the server.
 
 On the server ensure that `local.py` is on the path and run `s_app_cp.py`.
 
-###### [Contents](./README#1-contents)
+###### [Contents](./README.md#1-contents)
 
 # 4. Client side applications
 
@@ -239,7 +239,7 @@ await client_instance
 ```
 is isuued, the coroutine will pause until connectivity is (re)established.
 
-###### [Contents](./README#1-contents)
+###### [Contents](./README.md#1-contents)
 
 # 5. Server side applications
 
@@ -326,7 +326,7 @@ await connection_instance
 ```
 is isuued, the coroutine will pause until connectivity is (re)established.
 
-###### [Contents](./README#1-contents)
+###### [Contents](./README.md#1-contents)
 
 # 6. Ensuring resilience
 
@@ -353,7 +353,7 @@ Calling `write` with `pause=False` fixes this but requires that the application
 limits the amount of data transmitted in the `TIMEOUT` period to avoid buffer
 overflow.
 
-###### [Contents](./README#1-contents)
+###### [Contents](./README.md#1-contents)
 
 # 7. Quality of service
 
@@ -398,7 +398,7 @@ In this case `status` returns `False` and the message would be repeated. This
 could be handled by including an incrementing `message_id` in the data, with
 the peer discarding duplicates.
 
-###### [Contents](./README#1-contents)
+###### [Contents](./README.md#1-contents)
 
 # 8. Performance
 
