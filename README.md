@@ -82,12 +82,13 @@ merely passes data between nodes and/or logs data to disk.
  8. [Performance](./README.md#8-performance)  
   8.1 [Latency and throughput](./README.md#81-latency-and-throughput)  
   8.2 [Client RAM utilisation](./README.md#82-client-ram-utilisation)  
+ 9. [Planned enhancements](./READMEmd#9-planned-enhancements)  
 
 # 2. Design
 
 The code is asynchronous and based on `uasyncio` (`asyncio` on the server
 side). Client applications on the ESP8266 import `client.py` which provides the
-interface to the link. The server side application (written in Cpython) uses
+interface to the link. The server side application (written in CPython) uses
 `server_cp.py`.
 
 Messages are required to be complete lines of text. They typically comprise an
@@ -424,3 +425,16 @@ With a daily build and no use of frozen bytecode the demo reports just under
 `uasyncio` is included as frozen bytecode. Free RAM of 21.5KB was achieved
 with compiled firmware with `client.py`, `primitives.py` and `uasyncio` frozen
 as bytecode.
+
+###### [Contents](./README.md#1-contents)
+
+# 9. Planned enhancements
+
+ 1. Produce demo code for qos == 2.
+ 2. Produce a demo of one client controlling another.
+ 3. Extend the protocol to the Pyboard. In this instance the client side
+ application runs on the Pyboard. The [existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c)
+ provides a text based serial interface between the Pyboard and the ESP8266,
+ which merely acts as a relay passing the data to the server-side application
+ via the resilient link. The code running on the ESP8266 will be fixed and
+ probably also supplied as a firmware binary.
