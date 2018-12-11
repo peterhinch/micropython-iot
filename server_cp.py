@@ -72,7 +72,7 @@ async def run(loop, nconns=10, verbose=False):
             try:
                 client_id = await _readid(c_sock)
             except OSError:
-                c_sock._close()
+                c_sock.close()
             else:
                 verbose and print('Got connection from client', client_id)
                 Connection.go(loop, client_id, verbose, c_sock, s_sock)
