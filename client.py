@@ -4,6 +4,7 @@
 # Copyright (C) Peter Hinch 2018
 
 import gc
+
 gc.collect()
 import usocket as socket
 import uasyncio as asyncio
@@ -11,10 +12,11 @@ import primitives as asyn  # Stripped down version of asyn.py
 import network
 import utime
 from local import *
+
 gc.collect()
 
 
-class Client():
+class Client:
     def __init__(self, loop, verbose=False, led=None):
         self.timeout = TIMEOUT  # Server timeout from local.py
         self.verbose = verbose
@@ -35,7 +37,7 @@ class Client():
         gc.collect()
         loop.create_task(self._run(loop))
 
-# **** API ****
+    # **** API ****
     def __iter__(self):  # App can await a connection
         while not self.ok:
             yield from asyncio.sleep_ms(500)
@@ -66,7 +68,7 @@ class Client():
         if isinstance(self.sock, socket.socket):
             self.sock.close()
 
-# **** API end ****
+    # **** API end ****
 
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
@@ -175,7 +177,7 @@ class Client():
                 line = b''.join((line, d))
             if utime.ticks_diff(utime.ticks_ms(), start) > self.timeout:
                 raise OSError
- 
+
     async def _send(self, d):  # Write a line to either socket.
         start = utime.ticks_ms()
         nts = len(d)  # Bytes to send

@@ -23,6 +23,7 @@ TO_SECS = TIMEOUT / 1000  # ms to seconds
 TIM_SHORT = TO_SECS / 10  # Delay << timeout
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
+
 # Read the node ID. This reads data one byte at a time: there isn't yet a
 # Connection instance to store incoming data.
 async def _readid(s):
@@ -45,6 +46,7 @@ async def _readid(s):
                 return line.rstrip()
         await asyncio.sleep(0)
 
+
 # Server-side app waits for a working connection
 async def client_conn(client_id):
     while True:
@@ -53,6 +55,7 @@ async def client_conn(client_id):
             await c
             return c
         await asyncio.sleep(0.5)
+
 
 # API: application calls server.run()
 async def run(loop, nconns=10, verbose=False):
@@ -78,10 +81,11 @@ async def run(loop, nconns=10, verbose=False):
                 Connection.go(loop, client_id, verbose, c_sock, s_sock)
         await asyncio.sleep(0.2)
 
+
 # A Connection persists even if client dies (minimise object creation).
 # If client dies Connection is closed: ._close() flags this state by closing its
 # socket and setting .sock to None (.status() == False).
-class Connection():
+class Connection:
     conns = {}  # index: client_id. value: Connection instance
     server_sock = None
 
@@ -125,7 +129,7 @@ class Connection():
                             self._close()
                         await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
                     else:
-                         self._close()  # Reset by peer 104
+                        self._close()  # Reset by peer 104
                 else:
                     start = time.time()  # Something was received
                     if d == '':  # Reset by peer
@@ -187,6 +191,7 @@ class Connection():
                 self.verbose and print('Write client disconnected: closing connection.')
                 self._close()
         if pause and not buf.startswith('\n'):  # Throttle rate of non-keepalive messages
+            # Kevin Köck: does not have any effect if multiple coroutines try to write
             dt = end - time.time()
             if dt > 0:
                 await asyncio.sleep(dt)  # Control tx rate: <= 1 msg per timeout period
