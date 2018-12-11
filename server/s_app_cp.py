@@ -13,7 +13,8 @@
 
 import asyncio
 import json
-import server_cp as server
+from server import server_cp as server
+
 
 class App():
     def __init__(self, loop, client_id):

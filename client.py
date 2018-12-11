@@ -11,21 +11,21 @@ import uasyncio as asyncio
 import primitives as asyn  # Stripped down version of asyn.py
 import network
 import utime
-from local import *
 
 gc.collect()
 
 
 class Client:
-    def __init__(self, loop, verbose=False, led=None):
-        self.timeout = TIMEOUT  # Server timeout from local.py
+    def __init__(self, loop, my_id, server, port, timeout, verbose=False, led=None):
+        self.timeout = timeout  # Server timeout from local.py
         self.verbose = verbose
         self.led = led
+        self.my_id = my_id
         self._sta_if = network.WLAN(network.STA_IF)
         self._sta_if.active(True)
         ap = network.WLAN(network.AP_IF)
         ap.active(False)
-        self.server = socket.getaddrinfo(SERVER, PORT)[0][-1]  # server read
+        self.server = socket.getaddrinfo(server, port)[0][-1]  # server read
         gc.collect()
         self.evfail = asyn.Event(100)  # 100ms pause
         self.evread = asyn.Event(100)
@@ -94,7 +94,7 @@ class Client:
             try:
                 self.sock.connect(self.server)
                 self.sock.setblocking(False)
-                await self._send(MY_ID)  # Can throw OSError
+                await self._send(self.my_id)  # Can throw OSError
             except OSError:
                 pass
             else:
