@@ -139,7 +139,7 @@ constants must be common to all clients and the server:
  2. `SERVER` IP address of local server PC.
  3. `TIMEOUT` In ms. Normally 1500. See sections 6 and 7.
  4. `CLIENT_ID` Associates an ESP8266 with its server-side application. Must be
- unique to each client. May be zny `\n` terminated Python string.
+ unique to each client. May be any `\n` terminated Python string.
 
 ## 3.1 Installation
 
