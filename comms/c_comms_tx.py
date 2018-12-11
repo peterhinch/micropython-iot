@@ -12,6 +12,7 @@ gc.collect()
 import ujson
 import client
 import aswitch
+import primitives
 from machine import Pin
 
 
@@ -21,9 +22,9 @@ class App():
         led = Pin(2, Pin.OUT, value = 1)  # Optional LED
         # Pushbutton on Cockle board from shrimping.it
         self.switch = aswitch.Switch(Pin(0, Pin.IN))
-        self.switch.close_func(self.schange)
-        self.switch.open_func(self.schange)
-        self.must_send = True
+        self.switch.close_func(lambda : self.must_send.set())
+        self.switch.open_func(lambda : self.must_send.set())
+        self.must_send = primitives.Event()
         self.cl = client.Client(loop, verbose, led)
         loop.create_task(self.start(loop))
 
@@ -32,14 +33,10 @@ class App():
         await self.cl
         self.verbose and print('Got connection')
         while True:
-            if self.must_send:
-                await self.cl.write(ujson.dumps([self.switch()]), False)
-                self.must_send = False
-            await asyncio.sleep_ms(0)
+            await self.must_send
+            await self.cl.write(ujson.dumps([self.switch()]), False)
+            self.must_send.clear()
 
-    def schange(self):
-        self.must_send = True
-            
     def close(self):
         self.cl.close()
 

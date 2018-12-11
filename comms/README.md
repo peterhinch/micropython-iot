@@ -7,8 +7,7 @@ the LED on another.
 
  1. `s_comms_cp.py` The server application. Run under CPython 3.5+.
  2. `c_comms_tx.py` Transmitting client. Expects a switch to ground on GPIO0.
- Requires `aswitch.py` from [this repo](https://github.com/peterhinch/micropython-async).
+ Requires `primitives.py` from this repo and `aswitch.py` from
+ [this repo](https://github.com/peterhinch/micropython-async).
  3. `c_comms_rx.py` Receiving client. LED on GPIO2 displays result.
 
-There is some latency if switch state changes occur in quick succession. Under
-investigation.

@@ -55,7 +55,7 @@ class Client():
             buf = ''.join((buf, '\n'))
         self.evsend.set(buf)  # Cleared after apparently succesful tx
         while self.evsend.is_set():
-            await asyncio.sleep_ms(100)
+            await asyncio.sleep_ms(30)
         if pause:
             dt = utime.ticks_diff(end, utime.ticks_ms())
             if dt > 0:
