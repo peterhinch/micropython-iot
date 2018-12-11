@@ -1,4 +1,4 @@
-# primitives.py A stripped-down verion of asyn.py with Lock and Event only.
+# primitives.py A stripped-down version of asyn.py with Lock and Event only.
 # Save RAM on ESP8266
 
 # Released under the MIT licence.
@@ -6,7 +6,8 @@
 
 import uasyncio as asyncio
 
-class Lock():
+
+class Lock:
     def __init__(self, delay_ms=0):
         self._locked = False
         self.delay_ms = delay_ms
@@ -36,7 +37,7 @@ class Lock():
         self._locked = False
 
 
-class Event():
+class Event:
     def __init__(self, delay_ms=0):
         self.delay_ms = delay_ms
         self.clear()
@@ -47,7 +48,9 @@ class Event():
 
     def __iter__(self):
         while not self._flag:
-            await asyncio.sleep_ms(self.delay_ms)
+            yield from asyncio.sleep_ms(self.delay_ms)
+
+    __await__ = __iter__
 
     def is_set(self):
         return self._flag
