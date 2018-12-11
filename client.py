@@ -96,12 +96,19 @@ class Client():
             except OSError:
                 pass
             else:
-                loop.create_task(asyn.Cancellable(self._reader)())
-                loop.create_task(asyn.Cancellable(self._writer)())
-                loop.create_task(asyn.Cancellable(self._keepalive)())
+                # Improved cancellation code contributed by Kevin Köck
+                _reader = self._reader()
+                loop.create_task(_reader)
+                _writer = self._writer()
+                loop.create_task(_writer)
+                _keepalive = self._keepalive()
+                loop.create_task(_keepalive)
                 await self.evfail  # Pause until something goes wrong
                 self.ok = False
-                await asyn.Cancellable.cancel_all()
+                asyncio.cancel(_reader)
+                asyncio.cancel(_writer)
+                asyncio.cancel(_keepalive)
+                await asyncio.sleep(1)  # wait for cancellation
                 self.close()  # Close sockets
                 self.verbose and print('Fail detected.')
             s.disconnect()
@@ -109,7 +116,6 @@ class Client():
             while s.isconnected():
                 await asyncio.sleep(1)
 
-    @asyn.cancellable
     async def _reader(self):  # Entry point is after a (re) connect.
         c = self.connects  # Count successful connects
         self.evread.clear()  # No data read yet
@@ -123,7 +129,6 @@ class Client():
         except OSError:
             self.evfail.set()  # ._run cancels other coros
 
-    @asyn.cancellable
     async def _writer(self):
         try:
             while True:
@@ -135,7 +140,6 @@ class Client():
         except OSError:
             self.evfail.set()
 
-    @asyn.cancellable
     async def _keepalive(self):
         tim = self.timeout * 2 // 3  # Ensure  >= 1 keepalives in server t/o
         try:

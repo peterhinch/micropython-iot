@@ -65,6 +65,10 @@ merely passes data between nodes and/or logs data to disk.
 
 # 1. Contents
 
+This repo comprises code for resilent full-duplex connections between a server
+application and multiple ESP8266 clients. Each connection is like a simplified
+socket, but one which persists through outages.
+
  0. [MicroPython IOT application design](./README.md#0-microPython-iot-application-design)  
  1. [Contents](./README.md#1-contents)  
  2. [Design](./README.md#2-design)  
@@ -77,17 +81,16 @@ merely passes data between nodes and/or logs data to disk.
   5.1 [The server module](./README.md#51-the-server-module)  
  6. [Ensuring resilience](./README.md#6-ensuring-resilience) Guidelines for application design.   
  7. [Quality of service](./README.md#7-quality-of-service) Guaranteeing message delivery.  
-  7.1 [Using an acknowledge packet](./README.md#71-using-an-acknowledge-packet)  
-  7.2 [Another approach](./README.md#72-another-approach)  
  8. [Performance](./README.md#8-performance)  
   8.1 [Latency and throughput](./README.md#81-latency-and-throughput)  
   8.2 [Client RAM utilisation](./README.md#82-client-ram-utilisation)  
+ 9. [Planned enhancements](./README.md#9-planned-enhancements)  
 
 # 2. Design
 
 The code is asynchronous and based on `uasyncio` (`asyncio` on the server
 side). Client applications on the ESP8266 import `client.py` which provides the
-interface to the link. The server side application (written in Cpython) uses
+interface to the link. The server side application (written in CPython) uses
 `server_cp.py`.
 
 Messages are required to be complete lines of text. They typically comprise an
@@ -140,13 +143,18 @@ constants must be common to all clients and the server:
 
 ## 3.1 Installation
 
-The ESP8266 modules can run without recourse to frozen bytecode however the
-device has insufficient RAM to compile `client.py`: it should therefor be 
-[cross compiled](https://github.com/micropython/micropython/tree/master/mpy-cross).
+It is recommended to use the latest release build of firmware as such builds
+incorporate `uasyncio` as frozen bytecode. Daily builds do not. With a release
+build copy the above client files to the device. Edit `local.py` as described
+below and copy it to the device. Ensure the device has a stored WiFi connection
+and run te demo.
 
-The release firmware build (currently 1.9.4) incorporates `uasyncio` as frozen
-bytecode. Daily builds do not. Freezing `uasyncio` increases the free RAM when
-running the `c_app` demo from ~6KB to ~10KB.
+Alternatively to maximise free RAM firmware can be built from source, freezing
+`uasyncio`, `client.py` and `primitives.py` as bytecode.
+
+If a daily build is used it will be necessary to
+[cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
+`client.py`
 
 To run the demo the file `local.py` should be edited for the server IP address.
 The demo supports up to four clients. Each client's `local.py` should be edited
@@ -239,6 +247,9 @@ await client_instance
 ```
 is isuued, the coroutine will pause until connectivity is (re)established.
 
+The client only buffers a single incoming message. To avoid message loss ensure
+that there is a coroutine which spends most of its time awaiting incoming data.
+
 ###### [Contents](./README.md#1-contents)
 
 # 5. Server side applications
@@ -326,6 +337,9 @@ await connection_instance
 ```
 is isuued, the coroutine will pause until connectivity is (re)established.
 
+The server buffers incoming messages but it is good practice to have a coro
+which spends most of its time waiting for incoming data.
+
 ###### [Contents](./README.md#1-contents)
 
 # 6. Ensuring resilience
@@ -362,41 +376,9 @@ delivery. Normally when an outage occurs transmission is delayed until
 connectivity resumes. Packet loss will occur if, at the time when a message is
 sent, an outage has occurred but has not yet been detected by the sender.
 
-## 7.1 Using an acknowledge packet
-
-To achieve guaranteed delivery include an incrementing `message_id` in the data
-and have the peer data packets include the ID as an acknowledgement. If the
-acknowledgement is not received in a certain period, re-send the packet.
-
-This provides qos==1. It does not provide qos==2: there is a remote chance that
-the acknowledge packet is lost, in which case the original packet will
-erroneously be retransmitted. One approach to handling this is to ignore
-incoming duplicate messages (as identified by their `message_id`).
-
-## 7.2 Another approach
-
-I have not yet tested this but I think this will work
-```python
-    async def writer(self, conn):
-        dstr = json.dumps(self.data)  # If an outage occurs now
-        await conn.write(dstr)  # message may be lost
-        await asyncio.sleep(local.TIMEOUT / 1000)  # time for outage detection
-        if not conn.status():  # Meassage may have been lost
-            await conn.write(dstr)
-```
-If the outage is detected before the initial write, the write will wait until
-the outage is cleared and proceed succesfully. On completion `status` returns
-`True` and no retransmission will occur.
-
-Another fail case is where the outage occurs before the initial write, but it
-has not yet been detected. The initial write puts data into a socket whose peer
-is lost. By calling `status` after the period of the detection timeout the
-outage is detected and retransmission occurs.
-
-If the initial write succeeds an outage might occur during the `sleep` period.
-In this case `status` returns `False` and the message would be repeated. This
-could be handled by including an incrementing `message_id` in the data, with
-the peer discarding duplicates.
+In practice it is easy to achieve qos==2 in application code; in this case
+message delivery is guaranteed and messages will be processed once only. This
+is dicussed [here](./qos/README.md).
 
 ###### [Contents](./README.md#1-contents)
 
@@ -419,8 +401,20 @@ however I have not tested values <1.5s.
 
 ## 8.2 Client RAM utilisation
 
-With a daily build and no use of frozen bytecode the demo reports just under
-6KB free. With a release build this increases to nearly 10KB because
-`uasyncio` is included as frozen bytecode. Free RAM of 21.5KB was achieved
-with compiled firmware with `client.py`, `primitives.py` and `uasyncio` frozen
-as bytecode.
+With a daily build and no use of frozen bytecode the demo reports 9.1KB free.
+With a release build this increases to 15KB because `uasyncio` is included as
+frozen bytecode. Free RAM of 23.8KB was achieved with compiled firmware with
+`client.py`, `primitives.py` and `uasyncio` frozen as bytecode.
+
+###### [Contents](./README.md#1-contents)
+
+# 9. Planned enhancements
+
+ 1. Produce demo code for qos == 2.
+ 2. Produce a demo of one client controlling another.
+ 3. Extend the protocol to the Pyboard. In this instance the client side
+ application runs on the Pyboard. The [existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c)
+ provides a text based serial interface between the Pyboard and the ESP8266,
+ which merely acts as a relay passing the data to the server-side application
+ via the resilient link. The code running on the ESP8266 will be fixed and
+ probably also supplied as a firmware binary.
