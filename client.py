@@ -122,7 +122,6 @@ class Client():
         try:
             while True:
                 r = await self._readline()  # OSError on fail
-                self.ok = True  # Got at least 1 packet
                 self.evread.set(r)  # Read succeded: flag .readline
                 if c == self.connects:
                     self.connects += 1  # update connect count
@@ -158,6 +157,7 @@ class Client():
         start = utime.ticks_ms()
         while True:
             if line.endswith(b'\n'):
+                self.ok = True  # Got at least 1 packet
                 if len(line) > 1:
                     return line
                 line = b''
