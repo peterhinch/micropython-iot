@@ -8,7 +8,7 @@ import gc
 gc.collect()
 import usocket as socket
 import uasyncio as asyncio
-import primitives as asyn  # Stripped down version of asyn.py
+from . import primitives as asyn  # Stripped down version of asyn.py
 import network
 import utime
 
