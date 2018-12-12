@@ -163,6 +163,18 @@ must have a stored network connection to access the server.
 
 On the server ensure that `local.py` is on the path and run `s_app_cp.py`.
 
+#### Troubleshooting the demo
+
+Startup behaviour:
+ 1. Client repeatedly detects failure and re-initialises WiFi. Check server is
+ running; also that IP address and port in client's `local.py` are correct.
+ 2. Client spews text. Check ESP8266 has a working WiFi configuration.
+
+#### Further demos
+
+The directories [qos](./qos/README.md) and [comms](./comms/README.md) contain
+further demos.
+
 ###### [Contents](./README.md#1-contents)
 
 # 4. Client side applications
