@@ -13,10 +13,14 @@
 
 import asyncio
 import json
-from server import server_cp as server
+
+try:
+    from . import server_cp as server
+except:
+    import server_cp as server
 
 
-class App():
+class App:
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
@@ -48,7 +52,7 @@ class App():
             # .write() behaves as per .readline()
             await self.conn.write(json.dumps(self.data))
             await asyncio.sleep(5)
-        
+
 
 def run():
     loop = asyncio.get_event_loop()
@@ -60,6 +64,7 @@ def run():
     finally:
         print('Closing sockets')
         server.Connection.close_all()
+
 
 if __name__ == "__main__":
     run()
