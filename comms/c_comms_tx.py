@@ -8,6 +8,7 @@
 
 import gc
 import uasyncio as asyncio
+
 gc.collect()
 import ujson
 import client
@@ -15,17 +16,22 @@ import aswitch
 import primitives
 from machine import Pin
 
+try:
+    from . import local
+except:
+    import local
 
-class App():
-    def __init__(self, loop, verbose):
+
+class App:
+    def __init__(self, loop, my_id, server, port, timeout, verbose):
         self.verbose = verbose
-        led = Pin(2, Pin.OUT, value = 1)  # Optional LED
+        led = Pin(2, Pin.OUT, value=1)  # Optional LED
         # Pushbutton on Cockle board from shrimping.it
         self.switch = aswitch.Switch(Pin(0, Pin.IN))
-        self.switch.close_func(lambda : self.must_send.set())
-        self.switch.open_func(lambda : self.must_send.set())
+        self.switch.close_func(lambda: self.must_send.set())
+        self.switch.open_func(lambda: self.must_send.set())
         self.must_send = primitives.Event()
-        self.cl = client.Client(loop, verbose, led)
+        self.cl = client.Client(loop, my_id, server, port, timeout, None, verbose, led)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
@@ -40,8 +46,9 @@ class App():
     def close(self):
         self.cl.close()
 
+
 loop = asyncio.get_event_loop()
-app = App(loop, True)
+app = App(loop, local.MY_ID, local.SERVER, local.PORT, local.TIMEOUT, True)
 try:
     loop.run_forever()
 finally:

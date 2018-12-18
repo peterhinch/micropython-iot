@@ -10,11 +10,17 @@
 
 import asyncio
 import json
-import server_cp as server
 
-class App():
+try:
+    from ..server import server_cp as server
+except:
+    from server import server_cp as server
+
+
+class App:
     data = None
     clients = {'rx', 'tx'}  # Expected clients
+
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
@@ -56,7 +62,7 @@ class App():
             data = App.data
             await self.conn.write(json.dumps(data), False)  # Reduce latency
             print('Sent', data, 'to remote', self.client_id, '\n')
-        
+
 
 def run():
     loop = asyncio.get_event_loop()
@@ -68,6 +74,7 @@ def run():
     finally:
         print('Closing sockets')
         server.Connection.close_all()
+
 
 if __name__ == "__main__":
     run()
