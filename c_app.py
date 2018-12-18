@@ -5,17 +5,23 @@
 
 import gc
 import uasyncio as asyncio
+
 gc.collect()
 import ujson
 import client
 from machine import Pin
 
+try:
+    import local
+except:
+    from . import local
 
-class App():
-    def __init__(self, loop, verbose):
+
+class App:
+    def __init__(self, loop, my_id, server, port, timeout, verbose):
         self.verbose = verbose
-        led = Pin(2, Pin.OUT, value = 1)  # Optional LED
-        self.cl = client.Client(loop, verbose, led)
+        led = Pin(2, Pin.OUT, value=1)  # Optional LED
+        self.cl = client.Client(loop, my_id, server, port, timeout, self.constate, verbose, led)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
@@ -23,6 +29,9 @@ class App():
         await self.cl
         loop.create_task(self.reader())
         loop.create_task(self.writer())
+
+    async def constate(self, state):
+        print("Connection state:", state)
 
     async def reader(self):
         self.verbose and print('Started reader')
@@ -49,12 +58,13 @@ class App():
             # .write() behaves as per .readline()
             await self.cl.write(ujson.dumps(data))
             await asyncio.sleep(5)
-        
+
     def close(self):
         self.cl.close()
 
+
 loop = asyncio.get_event_loop()
-app = App(loop, True)
+app = App(loop, local.MY_ID, local.SERVER, local.PORT, local.TIMEOUT, True)
 try:
     loop.run_forever()
 finally:
