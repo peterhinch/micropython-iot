@@ -15,7 +15,7 @@ import asyncio
 import json
 import server_cp as server
 
-class App():
+class App:
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
@@ -36,7 +36,8 @@ class App():
             # Receives [restart count, uptime in secs, mem_free]
             print('Got', self.data, 'from remote', self.client_id)
 
-    # Send [approx application uptime in secs, received client uptime]
+    # Send
+    # [approx app uptime in secs/5, received client uptime, received mem_free]
     async def writer(self):
         print('Started writer')
         count = 0
@@ -51,9 +52,10 @@ class App():
 
 def run():
     loop = asyncio.get_event_loop()
-    clients = [App(loop, str(n)) for n in range(1, 5)]  # Accept 4 clients with ID's 1-4
+    clients = {'1', '2', '3', '4'}
+    apps = [App(loop, str(n)) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, 10, False))
+        loop.run_until_complete(server.run(loop, clients, False))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

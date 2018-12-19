@@ -1,3 +1,9 @@
+# NOTE: Under development!
+
+The server-side API has changed: in particular the `run` coro args. Further,
+thanks to input from Kevin Köck, we plan to move to use of Python packages.
+There will be some API changes on the client side.
+
 # 0. MicroPython IOT application design
 
 IOT (Internet of Things) systems commonly comprise a set of endpoints on a WiFi
@@ -179,6 +185,14 @@ further demos.
 
 # 4. Client side applications
 
+A client-side application instantiates a `Client` and launches a coroutine
+which awaits it. After the pause the `Client` has connected to the server and
+communication can begin. This is done using `Client.write` and
+`Client.readline` methods.
+
+Every client ha a unique ID (`MY_ID`) stored in `local.py`. The ID comprises a
+newline-terminated string.
+
 Messages comprise a single line of text; if the line is not terminated with a
 newline ('\n') the client library will append it. Newlines are only allowed as
 the last character. Blank lines will be ignored.
@@ -266,6 +280,13 @@ that there is a coroutine which spends most of its time awaiting incoming data.
 
 # 5. Server side applications
 
+A typical example has an `App` class with one instance per physical client
+device. This enables instances to share data via class variables. Each instance
+launches a coroutine which acquires a `Connection` instance for its individual
+client (specified by its client_id). This process will pause until the client
+has connected with the server. Communication is then done using the `readline`
+and `write` methods of the `Connection` instance.
+
 Messages comprise a single line of text; if the line is not terminated with a
 newline ('\n') the server library will append it. Newlines are only allowed as
 the last character. Blank lines will be ignored.
@@ -278,35 +299,41 @@ import server_cp as server
 
 class App():
     def __init__(self, loop, client_id):
+        self.client_id = client_id  # This instance talks to this client
+        self.conn = None  # Will be Connection instance
         self.data = [0, 0, 0]  # Exchange a 3-list with remote
-        loop.create_task(self.start(loop, client_id))
+        loop.create_task(self.start(loop))
 
-    async def start(self, loop, client_id):
-        conn = await server.client_conn(client_id)  # Wait for the specific EP8266
-        loop.create_task(self.reader(conn, client_id))
-        loop.create_task(self.writer(conn, client_id))
+    async def start(self, loop):
+        # await connection from the specific EP8266 client
+        self.conn = await server.client_conn(self.client_id)
+        loop.create_task(self.reader())
+        loop.create_task(self.writer())
 
-    async def reader(self, conn, client_id):
+    async def reader(self):
         while True:
-            line = await conn.readline()  # Pause in event of outage
+            # Next line will pause for client to send a message. In event of an
+            # outage it will pause for its duration.
+            line = await self.conn.readline()
             self.data = json.loads(line)
-            print('Got', self.data, 'from remote', client_id)
+            print('Got', self.data, 'from remote', self.client_id)
 
-    async def writer(self, conn, client_id):
+    async def writer(self):
         count = 0
         while True:
             self.data[0] = count
             count += 1
-            print('Sent', self.data, 'to remote', client_id, '\n')
-            await conn.write(json.dumps(self.data))  # Pause in event of outage
+            print('Sent', self.data, 'to remote', self.client_id, '\n')
+            await self.conn.write(json.dumps(self.data))  # May pause in event of outage
             await asyncio.sleep(5)
         
 
 def run():
     loop = asyncio.get_event_loop()
-    clients = [App(loop, n) for n in range(1, 5)]  # Accept 4 clients with ID's 1-4
+    clients = {1, 2, 3, 4}
+    apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, 10, False))
+        loop.run_until_complete(server.run(loop, clients, False))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
@@ -351,6 +378,18 @@ is isuued, the coroutine will pause until connectivity is (re)established.
 
 The server buffers incoming messages but it is good practice to have a coro
 which spends most of its time waiting for incoming data.
+
+Server module coroutines:
+
+ 1. `run` Args: `loop` `expected` `verbose=False` This is the main coro and
+ starts the system. `loop` is the event loop. `expected` is a set containing
+ the ID's of all clients. `verbose` causes debug messages to be printed.
+ 2. `client_conn` Arg: `client_id`. Returns the `Connection` instance for the
+ specified client when that client first connects.
+ 3. `wait_all` Arg: `client_id=None` Behaves as `client_conn` except that it
+ pauses until all expected clients have connected. If `None` is passed, the
+ assumption is that the current client is already connected. Pauses until all
+ other clients are also ready.
 
 ###### [Contents](./README.md#1-contents)
 
