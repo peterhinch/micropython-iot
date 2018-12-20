@@ -1,8 +1,7 @@
 # NOTE: Under development!
 
-The server-side API has changed: in particular the `run` coro args. Further,
-thanks to input from Kevin Köck, we plan to move to use of Python packages.
-There will be some API changes on the client side.
+The server-side API has changed: in particular the `run` coro args. See
+[section 10](./README.md#10-planned-enhancements) for forthcoming changes.
 
 # 0. MicroPython IOT application design
 
@@ -69,6 +68,10 @@ locally acquired data or using some nodes to control and monitor others. In
 such cases no internet protocol is required and the server side application
 merely passes data between nodes and/or logs data to disk.
 
+This architecture can be extended to non-networked clients such as the Pyboard.
+This is forthcoming and is described and diagrammed
+[here](./README.md#9-extension-to-the-pyboard).
+
 # 1. Contents
 
 This repo comprises code for resilent full-duplex connections between a server
@@ -90,7 +93,8 @@ socket, but one which persists through outages.
  8. [Performance](./README.md#8-performance)  
   8.1 [Latency and throughput](./README.md#81-latency-and-throughput)  
   8.2 [Client RAM utilisation](./README.md#82-client-ram-utilisation)  
- 9. [Planned enhancements](./README.md#9-planned-enhancements)  
+ 9. [Extension to the Pyboard](./README.md#9-extension-to-the-pyboard)  
+ 10. [Planned enhancements](./README.md#10-planned-enhancements)  
 
 # 2. Design
 
@@ -459,13 +463,22 @@ frozen bytecode. Free RAM of 23.8KB was achieved with compiled firmware with
 
 ###### [Contents](./README.md#1-contents)
 
-# 9. Planned enhancements
+# 9. Extension to the Pyboard
 
- 1. Produce demo code for qos == 2.
- 2. Produce a demo of one client controlling another.
- 3. Extend the protocol to the Pyboard. In this instance the client side
- application runs on the Pyboard. The [existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c)
- provides a text based serial interface between the Pyboard and the ESP8266,
- which merely acts as a relay passing the data to the server-side application
- via the resilient link. The code running on the ESP8266 will be fixed and
- probably also supplied as a firmware binary.
+This is a work in progress, working but needs further testing. It uses I2C to
+link a Pyboard to an ESP8266. The latter runs a fixed firmware build needing no
+user code. This extends the resilient link to the Pyboard. It uses the
+[existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c).
+
+![Image](images/block_diagram_pyboard.png)
+
+Resilient behaviour includes automatic recovery from WiFi and server outages.
+Also from ESP8266 crashes.
+
+# 10. Planned enhancements
+
+Implement the library as Python packages. Perform configuration with
+constructor args rather than direct import of `config.py`. (Changes offered by
+Kevin Köck).
+
+Ensure that the server side code can also run under MicroPython.
