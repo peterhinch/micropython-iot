@@ -51,3 +51,6 @@ It is perhaps worth noting that the discarding of duplicates is based on
 packets being sent in order. If there is more than one coro sending data,
 packets may be received out of order. Detecting duplicates becomes more
 dificult.
+
+At risk of stating the obvious, the above algorithm limits the throughput
+of the `writer` coroutine because of the pause after transmission.
