@@ -7,14 +7,25 @@
 
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
+import sys
+upython = sys.implementation.name == 'micropython'
 
-import asyncio
-import json
+if upython:
+    import uasyncio as asyncio
+    import ujson as json
+    import primitives
+else:
+    import asyncio
+    import json
 import server_cp as server
+
 
 class App():
     data = None
-    trig_send = asyncio.Event()
+    if upython:
+        trig_send = primitives.Event()
+    else:
+        trig_send = asyncio.Event()
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance

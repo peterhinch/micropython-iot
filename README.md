@@ -20,8 +20,8 @@ is capable of long term reliable operation. It does suffer from limited
 resources, in particular RAM. Achieving resilient operation in the face of WiFi
 or server outages is not straightforward: see
 [this document](https://github.com/peterhinch/micropython-samples/tree/master/resilient).
-The approach advocated here radically simplifies writing resilient ESP8266 IOT
-applications.
+The approach advocated here simplifies writing resilient ESP8266 IOT
+applications by providing a communications channel with inherent resilience.
 
 The usual arrangement for MicroPython internet access is as below.
 ![Image](images/block_diagram_orig.png)
@@ -37,10 +37,11 @@ Running internet protocols on ESP8266 nodes has the following drawbacks:
  5. Internet applications can be demanding of RAM.
 
 This document proposes an alternative where the ESP8266 nodes communicate with
-a local server. This runs CPython code and supports the internet protocol
-required by the application. The server and the ESP8266 nodes communicate using
-a simple protocol based on the exchange of lines of text. The server can run on
-a Linux box such as a Raspberry Pi; this can run 24/7 at minimal running cost.
+a local server. This runs CPython or MicroPython code and supports the internet
+protocol required by the application. The server and the ESP8266 nodes
+communicate using a simple protocol based on the exchange of lines of text. The
+server can run on a Linux box such as a Raspberry Pi; this can run 24/7 at
+minimal running cost.
 
 ![Image](images/block_diagram.png)  
 
@@ -52,11 +53,12 @@ Benefits are:
  realistic prospect.
  4. The amount of code running on the ESP8266 is smaller than that required to
  run a resilient internet protocol such as [this MQTT version](https://github.com/peterhinch/micropython-mqtt.git).
- 5. The server side application runs under CPython on a relatively powerful
- device having access to the full suite of Python libraries. Such a platform
- is ideally suited to running an internet protocol. Even minimal hardware has
- the horsepower easily to support TLS, and to maintain concurrent links to
- multiple client nodes. Use of threading is feasible.
+ 5. The server side application runs on a relatively powerful machine. Even
+ minimal hardware such as a Raspberry Pi has the horsepower easily to support
+ TLS and to maintain concurrent links to  multiple client nodes. Use of
+ threading is feasible.
+ 6. The option to use CPython on the server side enables access to the full
+ suite of Python libraries including internet modules.
 
 The principal drawback is that in addition to application code on the ESP8266
 node, application code is also required on the PC to provide the "glue" linking
@@ -98,10 +100,9 @@ socket, but one which persists through outages.
 
 # 2. Design
 
-The code is asynchronous and based on `uasyncio` (`asyncio` on the server
-side). Client applications on the ESP8266 import `client.py` which provides the
-interface to the link. The server side application (written in CPython) uses
-`server_cp.py`.
+The code is asynchronous and based on `asyncio`. Client applications on the
+ESP8266 import `client.py` which provides the interface to the link. The server
+side application uses `server_cp.py`.
 
 Messages are required to be complete lines of text. They typically comprise an
 arbitrary Python object encoded using JSON and terminated with a newline.
@@ -136,7 +137,7 @@ For ESP8266 client:
  2. `c_app.py` Demo client-side application.
  3. `primitives.py` Stripped down version of `asyn.py`.
 
-For server (run under CPython 3.5+):
+For server (run under CPython 3.5+ or MicroPython 1.9.4+):
  1. `server_cp.py` Server module.
  2. `s_app_cp.py` Demo server-side application.
 
@@ -472,13 +473,11 @@ user code. This extends the resilient link to the Pyboard. It uses the
 
 ![Image](images/block_diagram_pyboard.png)
 
-Resilient behaviour includes automatic recovery from WiFi and server outages.
-Also from ESP8266 crashes.
+Resilient behaviour includes automatic recovery from WiFi and server outages;
+also from ESP8266 crashes.
 
 # 10. Planned enhancements
 
 Implement the library as Python packages. Perform configuration with
 constructor args rather than direct import of `config.py`. (Changes offered by
 Kevin Köck).
-
-Ensure that the server side code can also run under MicroPython.
