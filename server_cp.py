@@ -10,13 +10,28 @@
 # This server and the server applications are assumed to reside on a device
 # with a wired interface on the local network.
 
-# Run under CPython 3.5+
+# Run under CPython 3.5+ or MicroPython Unix build
+import sys
+upython = sys.implementation.name == 'micropython'
+if upython:
+    import usocket as socket
+    import uasyncio as asyncio
+    import utime as time
+    import uselect as select
+    import uerrno as errno
+    import primitives
+else:
+    import socket
+    import asyncio
+    import time
+    import select
+    import errno
 
-import socket
-import asyncio
-import time
-import select
-import errno
+from local import PORT, TIMEOUT
+
+TO_SECS = TIMEOUT / 1000  # ms to seconds
+TIM_SHORT = TO_SECS / 10  # Delay << timeout
+TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
 
 # Read the node ID. This reads data one byte at a time: there isn't yet a
@@ -27,9 +42,11 @@ async def _readid(s):
     while True:
         try:
             d = s.recv(1).decode()
-        except socket.error as e:
+        except OSError as e:
             err = e.args[0]
-            if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
+            if err == errno.EAGAIN:
+                # Note: did have or err == errno.EWOULDBLOCK. Not supported in
+                # upython. In cpython EWOULDBLOCK == EAGAIN == 11.
                 await asyncio.sleep(TIM_SHORT)
             else:
                 raise OSError  # Reset by peer 104
@@ -47,10 +64,11 @@ async def client_conn(client_id):
     while True:
         if client_id in Connection.conns:
             c = Connection.conns[client_id]
-            await c
+            # await c 
+            # works but under CPython produces runtime warnings. So do:
+            await c._status_coro()
             return c
         await asyncio.sleep(0.5)
-
 
 # App waits for all expected clients to connect.
 async def wait_all(client_id=None):
@@ -61,24 +79,15 @@ async def wait_all(client_id=None):
         await asyncio.sleep(0.5)
     return conn
 
-
 # API: application calls server.run()
-async def run(loop, expected, verbose=False, port=8123, timeout=1500):
-    addr = socket.getaddrinfo('0.0.0.0', port, 0, socket.SOCK_STREAM)[0][-1]
+async def run(loop, expected, verbose=False):
+    addr = socket.getaddrinfo('0.0.0.0', PORT, 0, socket.SOCK_STREAM)[0][-1]
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s_sock.bind(addr)
     # Allow 2 extra connections: provide a meaningful message if expected
     # client set is too short for actual hardware.
     s_sock.listen(len(expected) + 2)
-    global TO_SECS
-    global TIMEOUT
-    global TIM_SHORT
-    global TIM_TINY
-    TIMEOUT = timeout
-    TO_SECS = timeout / 1000  # ms to seconds
-    TIM_SHORT = TO_SECS / 10  # Delay << timeout
-    TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
     verbose and print('Awaiting connection.')
     poller = select.poll()
     poller.register(s_sock, select.POLLIN)
@@ -110,9 +119,10 @@ class Connection:
         if cls.server_sock is None:  # 1st invocation
             cls.server_sock = s_sock
             cls.expected.update(expected)
-        if client_id not in cls.conns:  # New client: instantiate Connection
-            Connection(loop, client_id, verbose)
-        cls.conns[client_id].sock = c_sock
+        if client_id in cls.conns:  # Old client, new socket
+            cls.conns[client_id].sock = c_sock
+        else: # New client: instantiate Connection
+            Connection(loop, c_sock, client_id, verbose)
 
     @classmethod
     def close_all(cls):
@@ -121,7 +131,8 @@ class Connection:
         if cls.server_sock is not None:
             cls.server_sock.close()
 
-    def __init__(self, loop, client_id, verbose):
+    def __init__(self, loop, c_sock, client_id, verbose):
+        self.sock = c_sock  # Socket
         self.client_id = client_id
         self.verbose = verbose
         Connection.conns[client_id] = self
@@ -129,23 +140,25 @@ class Connection:
             Connection.expected.remove(client_id)
         except KeyError:
             print('Warning: unexpected or duplicate client:', client_id, Connection.expected)
-        self.lock = asyncio.Lock()
-        self.sock = None  # Socket
+        if upython:
+            self.lock = primitives.Lock()
+        else:
+            self.lock = asyncio.Lock()
         loop.create_task(self._keepalive())
         self.lines = []
         loop.create_task(self._read())
 
     async def _read(self):
         while True:
-            await self
+            await self._status_coro()
             buf = bytearray()
             start = time.time()
             while self.status():
                 try:
                     d = self.sock.recv(4096)
-                except socket.error as e:
+                except OSError as e:
                     err = e.args[0]
-                    if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
+                    if err == errno.EAGAIN:
                         if time.time() - start > TO_SECS:
                             self._close()
                         await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
@@ -153,7 +166,7 @@ class Connection:
                         self._close()  # Reset by peer 104
                 else:
                     start = time.time()  # Something was received
-                    if d == '':  # Reset by peer
+                    if d == b'':  # Reset by peer
                         self._close()
                     elif d is not None:
                         buf.extend(d)
@@ -167,7 +180,13 @@ class Connection:
         return self.sock is not None
 
     def __await__(self):
-        return self._status_coro().__await__()
+        if upython:
+            while not self.status():
+                yield TIM_SHORT
+        else:
+            return self._status_coro().__await__()
+    
+    __iter__ = __await__
 
     async def _status_coro(self):
         while not self.status():
@@ -177,7 +196,7 @@ class Connection:
         while True:
             if self.verbose and not self.status():
                 print('Reader Client:', self.client_id, 'awaiting OK status')
-            await self
+            await self._status_coro()
             self.verbose and print('Reader Client:', self.client_id, 'OK')
             while self.status():
                 if len(self.lines):
@@ -202,7 +221,7 @@ class Connection:
         while True:
             if self.verbose and not self.status():
                 print('Writer Client:', self.client_id, 'awaiting OK status')
-            await self
+            await self._status_coro()
             self.verbose and print('Writer Client:', self.client_id, 'OK')
             try:
                 async with self.lock:  # >1 writing task?
@@ -225,8 +244,8 @@ class Connection:
         while len(d):
             try:
                 ns = self.sock.send(d)  # Raise OSError if client fails
-            except socket.error as e:
-                raise OSError
+            except OSError:
+                raise
             else:
                 d = d[ns:]
                 if len(d):

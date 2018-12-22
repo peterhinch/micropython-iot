@@ -8,7 +8,7 @@ The server-side API has changed: in particular the `run` coro args. See
 IOT (Internet of Things) systems commonly comprise a set of endpoints on a WiFi
 network. Internet access is provided by an access point (AP) linked to a
 router. Endpoints run an internet protocol such as MQTT or HTTP and normally
-run continuously. They may be located in places which are hard to access:
+run continously. They may be located in places which are hard to access:
 reliability is therefore paramount. Security is also a factor for endpoints
 exposed to the internet.
 
@@ -86,7 +86,6 @@ socket, but one which persists through outages.
   2.1 [Protocol](./README.md#21-protocol)  
  3. [Files](./README.md#3-files)  
   3.1 [Installation](./README.md#31-installation)  
-  3.2 [Usage](./README.md#32-usage)
  4. [Client side applications](./README.md#4-client-side-applications)  
   4.1 [The Client class](./README.md#41-the-client-class)  
  5. [Server side applications](./README.md#5-server-side-applications)  
@@ -132,15 +131,18 @@ incoming connection.
 
 # 3. Files
 
-1. `client.py` Client module for ESP8266.
-2. `primitives.py` Stripped down version of `asyn.py`.
-3. `server_cp.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
-4. `examples` Package of a general example for client and server usage
-    4.1. `c_app.py` Demo client-side application.
-    4.2. `s_app_cp.py` Demo server-side application.
-    4.3. `local.py` Example of local config file.
-5. `examples_remote_control` Package of a specific example of using the library to remote control another esp8266, see [README](./example_remote_control/README.md)
-6. `qos` Package of an example qos implementation, see [README](./qos/README.md)
+For ESP8266 client:
+
+ 1. `client.py` Client module.
+ 2. `c_app.py` Demo client-side application.
+ 3. `primitives.py` Stripped down version of `asyn.py`.
+
+For server (run under CPython 3.5+ or MicroPython 1.9.4+):
+ 1. `server_cp.py` Server module.
+ 2. `s_app_cp.py` Demo server-side application.
+
+For both:
+ 1. `local.py` Example of local config file.
 
 `local.py` should be edited to ensure each client has a unique ID. Other
 constants must be common to all clients and the server:
@@ -149,71 +151,28 @@ constants must be common to all clients and the server:
  3. `TIMEOUT` In ms. Normally 1500. See sections 6 and 7.
  4. `CLIENT_ID` Associates an ESP8266 with its server-side application. Must be
  unique to each client. May be any `\n` terminated Python string.
- The client and server configuration is done using constructor arguments, 
- therefore `local.py` is imported in the example files and can be implemented differently. 
 
 ## 3.1 Installation
 
 It is recommended to use the latest release build of firmware as such builds
 incorporate `uasyncio` as frozen bytecode. Daily builds do not. With a release
-build copy the above client files to the device. Edit `local.py` for each example
-as described below and copy it to the device. Ensure the device has a stored 
-WiFi connection and run the demo.
-To run the demo the file `local.py` for the corresponding example should be edited 
-for the server IP address.
-The demo supports up to four clients. Each client's `local.py` should be edited
-to give each client a unique client ID in range 1..4. Note that the ESP8266
-must have a stored network connection to access the server.
+build copy the above client files to the device. Edit `local.py` as described
+below and copy it to the device. Ensure the device has a stored WiFi connection
+and run te demo.
 
-On the server ensure that `local.py` is on the path and run `s_app_cp.py`.
-
-Alternatively to maximise free RAM, firmware can be built from source, freezing
+Alternatively to maximise free RAM firmware can be built from source, freezing
 `uasyncio`, `client.py` and `primitives.py` as bytecode.
 
 If a daily build is used it will be necessary to
 [cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
 `client.py`
 
-To get the files onto your ESP8266 do NOT copy single files as this repository is
-built to be used as a python package. This means that you have to retain the file
-structure for it to work.
-The easiest way is to clone the repository:
-```
-git clone https://github.com/peterhinch/micropython-iot micropython_iot
-```
-It's important to clone it into a directory *micropyhton_iot* as python does not like
-packages that have a "-" character in their name. 
-Then you need [rshell](https://github.com/dhylands/rshell) and follow these commands:
-```
-rshell -p /dev/ttyS3  # adapt the port to your situation
-mkdir /pyboard/micropython_iot   # create directory on your esp822 
-(yes you need to use /pyboard here, at least I do)
-rsync micropython_iot /pyboard/micropython_iot -v -m
-(this can take a while, you might have to do it again if it fails early during the image
-transfer of "block_diagram_orig.odg". There's no exclude option for rsync yet)
-```
-Now you have successfully synchronized the repository onto your device.
+To run the demo the file `local.py` should be edited for the server IP address.
+The demo supports up to four clients. Each client's `local.py` should be edited
+to give each client a unique client ID in range 1..4. Note that the ESP8266
+must have a stored network connection to access the server.
 
-The other way is to freeze it into the firmware by copying the repository to the
-micropython/ports/esp8266 directory.
-
-## 3.2 Usage
-
-On the esp8266 you can now run every example using the following syntax:
-```
-from micropython_iot.examples import c_app
-from micropython_iot.example_remote_control import c_comms_tx
-from micropython_iot.example_remote_control import c_comms_rx
-from micropython_iot.qos import c_qos
-```
-
-
-The server part can be used like this when the current directory contains micropython_iot:
-```
-python3 -m micropython_iot.examples.s_app_cp
-python3 -m micropython_iot.example_remote_control.s_comms_cp
-python3 -m micropython_iot.qos.s_qos_cp
-```
+On the server ensure that `local.py` is on the path and run `s_app_cp.py`.
 
 #### Troubleshooting the demo
 
@@ -247,22 +206,18 @@ A basic client-side application has this form:
 ```python
 import uasyncio as asyncio
 import ujson
-from micropython_iot import client
-import local  # or however you configure your project
+import client
 
 
-class App:
-    def __init__(self, loop, my_id, server, port, timeout):
-        self.cl = client.Client(loop, my_id, server, port, timeout, self.state, None)
+class App():
+    def __init__(self, loop):
+        self.cl = client.Client(loop)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
         await self.cl  # Wait until client has connected to server
         loop.create_task(self.reader())
         loop.create_task(self.writer())
-        
-    def state(self, state):
-        print("Connection state:", state)
 
     async def reader(self):
         while True:
@@ -284,7 +239,7 @@ class App:
         self.cl.close()
 
 loop = asyncio.get_event_loop()
-app = App(loop, local.MY_ID, local.SERVER, local.PORT, local.TIMEOUT, True)
+app = App(loop)
 try:
     loop.run_forever()
 finally:
@@ -297,14 +252,8 @@ pause until connectivity has been restored. The server side API is similar.
 
 Constructor args:
  1. `loop` The event loop.
- 2. `my_id` The client id.
- 3. `server` The server IP-Adress to connect to.
- 4. `port` The port the server listens on.
- 5. `timeout` The timeout for connection, used for connection state detection.
- 6. `connected_cb` Callback or coroutine that is called whenever the connection changes
- 7. `connected_cb_args` Arguments that will be passed to the *connected_cb* callback. First argument however is always the state.
- 8. `verbose=False` Provides optional debug output.
- 9. `led=None` If a `Pin` instance is passed it will be toggled each time a
+ 2. `verbose=False` Provides optional debug output.
+ 3. `led=None` If a `Pin` instance is passed it will be toggled each time a
  keepalive message is received. Can provide a heartbeat LED if connectivity is
  present.
 
@@ -327,7 +276,7 @@ The `Client` class is awaitable. If
 ```python
 await client_instance
 ```
-is issued, the coroutine will pause until connectivity is (re)established.
+is isuued, the coroutine will pause until connectivity is (re)established.
 
 The client only buffers a single incoming message. To avoid message loss ensure
 that there is a coroutine which spends most of its time awaiting incoming data.
@@ -351,10 +300,9 @@ A basic server-side application has this form:
 ```python
 import asyncio
 import json
-from micropython_iot import server_cp as server
-import local  # or however you want to configure your project
+import server_cp as server
 
-class App:
+class App():
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Will be Connection instance
@@ -390,7 +338,7 @@ def run():
     clients = {1, 2, 3, 4}
     apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, clients, False, local.PORT, local.TIMEOUT))
+        loop.run_until_complete(server.run(loop, clients, False))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
@@ -438,12 +386,9 @@ which spends most of its time waiting for incoming data.
 
 Server module coroutines:
 
- 1. `run` Args: `loop` `expected` `verbose=False` `port=8123` `timeout=1500`
- This is the main coro and starts the system. 
- `loop` is the event loop. `expected` is a set containing the ID's of all clients. 
- `verbose` causes debug messages to be printed. `port` is the port to listen to
-  and `timeout` is the amount of ms that can pass without a keepalive until the 
-  connection is considered dead.
+ 1. `run` Args: `loop` `expected` `verbose=False` This is the main coro and
+ starts the system. `loop` is the event loop. `expected` is a set containing
+ the ID's of all clients. `verbose` causes debug messages to be printed.
  2. `client_conn` Arg: `client_id`. Returns the `Connection` instance for the
  specified client when that client first connects.
  3. `wait_all` Arg: `client_id=None` Behaves as `client_conn` except that it

@@ -7,18 +7,25 @@
 
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
+import sys
+upython = sys.implementation.name == 'micropython'
 
-import asyncio
-import json
+if upython:
+    import uasyncio as asyncio
+    import ujson as json
+    import primitives
+else:
+    import asyncio
+    import json
+import server_cp as server
 
-from micropython_iot import server_cp as server
-from .local import PORT, TIMEOUT
 
-
-class App:
+class App():
     data = None
-    trig_send = asyncio.Event()
-
+    if upython:
+        trig_send = primitives.Event()
+    else:
+        trig_send = asyncio.Event()
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
@@ -53,20 +60,19 @@ class App:
             data = App.data
             await self.conn.write(json.dumps(data), False)  # Reduce latency
             print('Sent', data, 'to remote', self.client_id, '\n')
-
+        
 
 def run():
     clients = {'rx', 'tx'}  # Expected clients
     loop = asyncio.get_event_loop()
     apps = [App(loop, name) for name in clients]  # Accept 2 clients
     try:
-        loop.run_until_complete(server.run(loop, clients, False, PORT, TIMEOUT))
+        loop.run_until_complete(server.run(loop, clients, False))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
         print('Closing sockets')
         server.Connection.close_all()
-
 
 if __name__ == "__main__":
     run()
