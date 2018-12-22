@@ -11,15 +11,12 @@ import uasyncio as asyncio
 
 gc.collect()
 import ujson
-import client
-import aswitch
-import primitives
 from machine import Pin
 
-try:
-    from . import local
-except:
-    import local
+from . import local_tx as local
+from . import aswitch
+from micropython_iot import client
+from micropython_iot import primitives
 
 
 class App:
@@ -31,7 +28,7 @@ class App:
         self.switch.close_func(lambda: self.must_send.set())
         self.switch.open_func(lambda: self.must_send.set())
         self.must_send = primitives.Event()
-        self.cl = client.Client(loop, my_id, server, port, timeout, None, verbose, led)
+        self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, led)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):

@@ -17,11 +17,6 @@ import asyncio
 import time
 import select
 import errno
-from local import PORT, TIMEOUT
-
-TO_SECS = TIMEOUT / 1000  # ms to seconds
-TIM_SHORT = TO_SECS / 10  # Delay << timeout
-TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
 
 # Read the node ID. This reads data one byte at a time: there isn't yet a
@@ -58,12 +53,20 @@ async def client_conn(client_id):
 
 
 # API: application calls server.run()
-async def run(loop, nconns=10, verbose=False):
-    addr = socket.getaddrinfo('0.0.0.0', PORT, 0, socket.SOCK_STREAM)[0][-1]
+async def run(loop, nconns=10, verbose=False, port=8123, timeout=1500):
+    addr = socket.getaddrinfo('0.0.0.0', port, 0, socket.SOCK_STREAM)[0][-1]
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s_sock.bind(addr)
     s_sock.listen(nconns)
+    global TO_SECS
+    global TIMEOUT
+    global TIM_SHORT
+    global TIM_TINY
+    TIMEOUT = timeout
+    TO_SECS = timeout / 1000  # ms to seconds
+    TIM_SHORT = TO_SECS / 10  # Delay << timeout
+    TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
     verbose and print('Awaiting connection.')
     poller = select.poll()
     poller.register(s_sock, select.POLLIN)

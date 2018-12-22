@@ -13,10 +13,11 @@
 
 import asyncio
 import json
-import server_cp as server
-from local import TIMEOUT
+from micropython_iot import server_cp as server
+from .local import TIMEOUT, PORT
 
-class App():
+
+class App:
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
@@ -66,18 +67,19 @@ class App():
             if not self.conn.status():  # Meassage may have been lost
                 await self.conn.write(dstr)  # Re-send: will wait until outage clears
             await asyncio.sleep(5 - tout)
-        
+
 
 def run():
     loop = asyncio.get_event_loop()
-    client = App(loop, 'qos')  # Accept 4 clients with ID's 1-4
+    client = App(loop, 'qos')  # Accept 1 client with id "qos"
     try:
-        loop.run_until_complete(server.run(loop, 10, False))
+        loop.run_until_complete(server.run(loop, 10, False, PORT, TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
         print('Closing sockets')
         server.Connection.close_all()
+
 
 if __name__ == "__main__":
     run()
