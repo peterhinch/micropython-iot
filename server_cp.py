@@ -12,6 +12,7 @@
 
 # Run under CPython 3.5+ or MicroPython Unix build
 import sys
+
 upython = sys.implementation.name == 'micropython'
 if upython:
     import usocket as socket
@@ -26,12 +27,6 @@ else:
     import time
     import select
     import errno
-
-from local import PORT, TIMEOUT
-
-TO_SECS = TIMEOUT / 1000  # ms to seconds
-TIM_SHORT = TO_SECS / 10  # Delay << timeout
-TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
 
 # Read the node ID. This reads data one byte at a time: there isn't yet a
@@ -64,11 +59,12 @@ async def client_conn(client_id):
     while True:
         if client_id in Connection.conns:
             c = Connection.conns[client_id]
-            # await c 
+            # await c
             # works but under CPython produces runtime warnings. So do:
             await c._status_coro()
             return c
         await asyncio.sleep(0.5)
+
 
 # App waits for all expected clients to connect.
 async def wait_all(client_id=None):
@@ -79,15 +75,24 @@ async def wait_all(client_id=None):
         await asyncio.sleep(0.5)
     return conn
 
+
 # API: application calls server.run()
-async def run(loop, expected, verbose=False):
-    addr = socket.getaddrinfo('0.0.0.0', PORT, 0, socket.SOCK_STREAM)[0][-1]
+async def run(loop, expected, verbose=False, port=8123, timeout=1500):
+    addr = socket.getaddrinfo('0.0.0.0', port, 0, socket.SOCK_STREAM)[0][-1]
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s_sock.bind(addr)
     # Allow 2 extra connections: provide a meaningful message if expected
     # client set is too short for actual hardware.
     s_sock.listen(len(expected) + 2)
+    global TO_SECS
+    global TIMEOUT
+    global TIM_SHORT
+    global TIM_TINY
+    TIMEOUT = timeout
+    TO_SECS = timeout / 1000  # ms to seconds
+    TIM_SHORT = TO_SECS / 10  # Delay << timeout
+    TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
     verbose and print('Awaiting connection.')
     poller = select.poll()
     poller.register(s_sock, select.POLLIN)
@@ -121,7 +126,7 @@ class Connection:
             cls.expected.update(expected)
         if client_id in cls.conns:  # Old client, new socket
             cls.conns[client_id].sock = c_sock
-        else: # New client: instantiate Connection
+        else:  # New client: instantiate Connection
             Connection(loop, c_sock, client_id, verbose)
 
     @classmethod
@@ -185,7 +190,7 @@ class Connection:
                 yield TIM_SHORT
         else:
             return self._status_coro().__await__()
-    
+
     __iter__ = __await__
 
     async def _status_coro(self):
