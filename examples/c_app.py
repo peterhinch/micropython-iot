@@ -8,20 +8,17 @@ import uasyncio as asyncio
 
 gc.collect()
 import ujson
-import client
 from machine import Pin
 
-try:
-    import local
-except:
-    from . import local
+from . import local
+from micropython_iot import client
 
 
 class App:
     def __init__(self, loop, my_id, server, port, timeout, verbose):
         self.verbose = verbose
         led = Pin(2, Pin.OUT, value=1)  # Optional LED
-        self.cl = client.Client(loop, my_id, server, port, timeout, self.constate, verbose, led)
+        self.cl = client.Client(loop, my_id, server, port, timeout, self.constate, None, verbose, led)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):

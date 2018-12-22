@@ -1,9 +1,14 @@
+# NOTE: Under development!
+
+The server-side API has changed: in particular the `run` coro args. See
+[section 10](./README.md#10-planned-enhancements) for forthcoming changes.
+
 # 0. MicroPython IOT application design
 
 IOT (Internet of Things) systems commonly comprise a set of endpoints on a WiFi
 network. Internet access is provided by an access point (AP) linked to a
 router. Endpoints run an internet protocol such as MQTT or HTTP and normally
-run continously. They may be located in places which are hard to access:
+run continuously. They may be located in places which are hard to access:
 reliability is therefore paramount. Security is also a factor for endpoints
 exposed to the internet.
 
@@ -15,8 +20,8 @@ is capable of long term reliable operation. It does suffer from limited
 resources, in particular RAM. Achieving resilient operation in the face of WiFi
 or server outages is not straightforward: see
 [this document](https://github.com/peterhinch/micropython-samples/tree/master/resilient).
-The approach advocated here radically simplifies writing resilient ESP8266 IOT
-applications.
+The approach advocated here simplifies writing resilient ESP8266 IOT
+applications by providing a communications channel with inherent resilience.
 
 The usual arrangement for MicroPython internet access is as below.
 ![Image](images/block_diagram_orig.png)
@@ -32,10 +37,11 @@ Running internet protocols on ESP8266 nodes has the following drawbacks:
  5. Internet applications can be demanding of RAM.
 
 This document proposes an alternative where the ESP8266 nodes communicate with
-a local server. This runs CPython code and supports the internet protocol
-required by the application. The server and the ESP8266 nodes communicate using
-a simple protocol based on the exchange of lines of text. The server can run on
-a Linux box such as a Raspberry Pi; this can run 24/7 at minimal running cost.
+a local server. This runs CPython or MicroPython code and supports the internet
+protocol required by the application. The server and the ESP8266 nodes
+communicate using a simple protocol based on the exchange of lines of text. The
+server can run on a Linux box such as a Raspberry Pi; this can run 24/7 at
+minimal running cost.
 
 ![Image](images/block_diagram.png)  
 
@@ -47,11 +53,12 @@ Benefits are:
  realistic prospect.
  4. The amount of code running on the ESP8266 is smaller than that required to
  run a resilient internet protocol such as [this MQTT version](https://github.com/peterhinch/micropython-mqtt.git).
- 5. The server side application runs under CPython on a relatively powerful
- device having access to the full suite of Python libraries. Such a platform
- is ideally suited to running an internet protocol. Even minimal hardware has
- the horsepower easily to support TLS, and to maintain concurrent links to
- multiple client nodes. Use of threading is feasible.
+ 5. The server side application runs on a relatively powerful machine. Even
+ minimal hardware such as a Raspberry Pi has the horsepower easily to support
+ TLS and to maintain concurrent links to  multiple client nodes. Use of
+ threading is feasible.
+ 6. The option to use CPython on the server side enables access to the full
+ suite of Python libraries including internet modules.
 
 The principal drawback is that in addition to application code on the ESP8266
 node, application code is also required on the PC to provide the "glue" linking
@@ -62,6 +69,10 @@ There are use-cases where conectivity is entirely local, for example logging
 locally acquired data or using some nodes to control and monitor others. In
 such cases no internet protocol is required and the server side application
 merely passes data between nodes and/or logs data to disk.
+
+This architecture can be extended to non-networked clients such as the Pyboard.
+This is forthcoming and is described and diagrammed
+[here](./README.md#9-extension-to-the-pyboard).
 
 # 1. Contents
 
@@ -75,6 +86,7 @@ socket, but one which persists through outages.
   2.1 [Protocol](./README.md#21-protocol)  
  3. [Files](./README.md#3-files)  
   3.1 [Installation](./README.md#31-installation)  
+  3.2 [Usage](./README.md#32-usage)
  4. [Client side applications](./README.md#4-client-side-applications)  
   4.1 [The Client class](./README.md#41-the-client-class)  
  5. [Server side applications](./README.md#5-server-side-applications)  
@@ -84,14 +96,14 @@ socket, but one which persists through outages.
  8. [Performance](./README.md#8-performance)  
   8.1 [Latency and throughput](./README.md#81-latency-and-throughput)  
   8.2 [Client RAM utilisation](./README.md#82-client-ram-utilisation)  
- 9. [Planned enhancements](./README.md#9-planned-enhancements)  
+ 9. [Extension to the Pyboard](./README.md#9-extension-to-the-pyboard)  
+ 10. [Planned enhancements](./README.md#10-planned-enhancements)  
 
 # 2. Design
 
-The code is asynchronous and based on `uasyncio` (`asyncio` on the server
-side). Client applications on the ESP8266 import `client.py` which provides the
-interface to the link. The server side application (written in CPython) uses
-`server_cp.py`.
+The code is asynchronous and based on `asyncio`. Client applications on the
+ESP8266 import `client.py` which provides the interface to the link. The server
+side application uses `server_cp.py`.
 
 Messages are required to be complete lines of text. They typically comprise an
 arbitrary Python object encoded using JSON and terminated with a newline.
@@ -120,18 +132,15 @@ incoming connection.
 
 # 3. Files
 
-For ESP8266 client:
-
- 1. `client.py` Client module.
- 2. `c_app.py` Demo client-side application.
- 3. `primitives.py` Stripped down version of `asyn.py`.
-
-For server (run under CPython 3.5+):
- 1. `server_cp.py` Server module.
- 2. `s_app_cp.py` Demo server-side application.
-
-For both:
- 1. `local.py` Example of local config file.
+1. `client.py` Client module for ESP8266.
+2. `primitives.py` Stripped down version of `asyn.py`.
+3. `server_cp.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
+4. `examples` Package of a general example for client and server usage
+    4.1. `c_app.py` Demo client-side application.
+    4.2. `s_app_cp.py` Demo server-side application.
+    4.3. `local.py` Example of local config file.
+5. `examples_remote_control` Package of a specific example of using the library to remote control another esp8266, see [README](./example_remote_control/README.md)
+6. `qos` Package of an example qos implementation, see [README](./qos/README.md)
 
 `local.py` should be edited to ensure each client has a unique ID. Other
 constants must be common to all clients and the server:
@@ -140,28 +149,71 @@ constants must be common to all clients and the server:
  3. `TIMEOUT` In ms. Normally 1500. See sections 6 and 7.
  4. `CLIENT_ID` Associates an ESP8266 with its server-side application. Must be
  unique to each client. May be any `\n` terminated Python string.
+ The client and server configuration is done using constructor arguments, 
+ therefore `local.py` is imported in the example files and can be implemented differently. 
 
 ## 3.1 Installation
 
 It is recommended to use the latest release build of firmware as such builds
 incorporate `uasyncio` as frozen bytecode. Daily builds do not. With a release
-build copy the above client files to the device. Edit `local.py` as described
-below and copy it to the device. Ensure the device has a stored WiFi connection
-and run te demo.
+build copy the above client files to the device. Edit `local.py` for each example
+as described below and copy it to the device. Ensure the device has a stored 
+WiFi connection and run the demo.
+To run the demo the file `local.py` for the corresponding example should be edited 
+for the server IP address.
+The demo supports up to four clients. Each client's `local.py` should be edited
+to give each client a unique client ID in range 1..4. Note that the ESP8266
+must have a stored network connection to access the server.
 
-Alternatively to maximise free RAM firmware can be built from source, freezing
+On the server ensure that `local.py` is on the path and run `s_app_cp.py`.
+
+Alternatively to maximise free RAM, firmware can be built from source, freezing
 `uasyncio`, `client.py` and `primitives.py` as bytecode.
 
 If a daily build is used it will be necessary to
 [cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
 `client.py`
 
-To run the demo the file `local.py` should be edited for the server IP address.
-The demo supports up to four clients. Each client's `local.py` should be edited
-to give each client a unique client ID in range 1..4. Note that the ESP8266
-must have a stored network connection to access the server.
+To get the files onto your ESP8266 do NOT copy single files as this repository is
+built to be used as a python package. This means that you have to retain the file
+structure for it to work.
+The easiest way is to clone the repository:
+```
+git clone https://github.com/peterhinch/micropython-iot micropython_iot
+```
+It's important to clone it into a directory *micropyhton_iot* as python does not like
+packages that have a "-" character in their name. 
+Then you need [rshell](https://github.com/dhylands/rshell) and follow these commands:
+```
+rshell -p /dev/ttyS3  # adapt the port to your situation
+mkdir /pyboard/micropython_iot   # create directory on your esp822 
+(yes you need to use /pyboard here, at least I do)
+rsync micropython_iot /pyboard/micropython_iot -v -m
+(this can take a while, you might have to do it again if it fails early during the image
+transfer of "block_diagram_orig.odg". There's no exclude option for rsync yet)
+```
+Now you have successfully synchronized the repository onto your device.
 
-On the server ensure that `local.py` is on the path and run `s_app_cp.py`.
+The other way is to freeze it into the firmware by copying the repository to the
+micropython/ports/esp8266 directory.
+
+## 3.2 Usage
+
+On the esp8266 you can now run every example using the following syntax:
+```
+from micropython_iot.examples import c_app
+from micropython_iot.example_remote_control import c_comms_tx
+from micropython_iot.example_remote_control import c_comms_rx
+from micropython_iot.qos import c_qos
+```
+
+
+The server part can be used like this when the current directory contains micropython_iot:
+```
+python3 -m micropython_iot.examples.s_app_cp
+python3 -m micropython_iot.example_remote_control.s_comms_cp
+python3 -m micropython_iot.qos.s_qos_cp
+```
 
 #### Troubleshooting the demo
 
@@ -179,6 +231,14 @@ further demos.
 
 # 4. Client side applications
 
+A client-side application instantiates a `Client` and launches a coroutine
+which awaits it. After the pause the `Client` has connected to the server and
+communication can begin. This is done using `Client.write` and
+`Client.readline` methods.
+
+Every client ha a unique ID (`MY_ID`) stored in `local.py`. The ID comprises a
+newline-terminated string.
+
 Messages comprise a single line of text; if the line is not terminated with a
 newline ('\n') the client library will append it. Newlines are only allowed as
 the last character. Blank lines will be ignored.
@@ -187,18 +247,22 @@ A basic client-side application has this form:
 ```python
 import uasyncio as asyncio
 import ujson
-import client
+from micropython_iot import client
+import local  # or however you configure your project
 
 
-class App():
-    def __init__(self, loop):
-        self.cl = client.Client(loop)
+class App:
+    def __init__(self, loop, my_id, server, port, timeout):
+        self.cl = client.Client(loop, my_id, server, port, timeout, self.state, None)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
         await self.cl  # Wait until client has connected to server
         loop.create_task(self.reader())
         loop.create_task(self.writer())
+        
+    def state(self, state):
+        print("Connection state:", state)
 
     async def reader(self):
         while True:
@@ -220,7 +284,7 @@ class App():
         self.cl.close()
 
 loop = asyncio.get_event_loop()
-app = App(loop)
+app = App(loop, local.MY_ID, local.SERVER, local.PORT, local.TIMEOUT, True)
 try:
     loop.run_forever()
 finally:
@@ -233,8 +297,14 @@ pause until connectivity has been restored. The server side API is similar.
 
 Constructor args:
  1. `loop` The event loop.
- 2. `verbose=False` Provides optional debug output.
- 3. `led=None` If a `Pin` instance is passed it will be toggled each time a
+ 2. `my_id` The client id.
+ 3. `server` The server IP-Adress to connect to.
+ 4. `port` The port the server listens on.
+ 5. `timeout` The timeout for connection, used for connection state detection.
+ 6. `connected_cb` Callback or coroutine that is called whenever the connection changes
+ 7. `connected_cb_args` Arguments that will be passed to the *connected_cb* callback. First argument however is always the state.
+ 8. `verbose=False` Provides optional debug output.
+ 9. `led=None` If a `Pin` instance is passed it will be toggled each time a
  keepalive message is received. Can provide a heartbeat LED if connectivity is
  present.
 
@@ -257,7 +327,7 @@ The `Client` class is awaitable. If
 ```python
 await client_instance
 ```
-is isuued, the coroutine will pause until connectivity is (re)established.
+is issued, the coroutine will pause until connectivity is (re)established.
 
 The client only buffers a single incoming message. To avoid message loss ensure
 that there is a coroutine which spends most of its time awaiting incoming data.
@@ -265,6 +335,13 @@ that there is a coroutine which spends most of its time awaiting incoming data.
 ###### [Contents](./README.md#1-contents)
 
 # 5. Server side applications
+
+A typical example has an `App` class with one instance per physical client
+device. This enables instances to share data via class variables. Each instance
+launches a coroutine which acquires a `Connection` instance for its individual
+client (specified by its client_id). This process will pause until the client
+has connected with the server. Communication is then done using the `readline`
+and `write` methods of the `Connection` instance.
 
 Messages comprise a single line of text; if the line is not terminated with a
 newline ('\n') the server library will append it. Newlines are only allowed as
@@ -274,39 +351,46 @@ A basic server-side application has this form:
 ```python
 import asyncio
 import json
-import server_cp as server
+from micropython_iot import server_cp as server
+import local  # or however you want to configure your project
 
-class App():
+class App:
     def __init__(self, loop, client_id):
+        self.client_id = client_id  # This instance talks to this client
+        self.conn = None  # Will be Connection instance
         self.data = [0, 0, 0]  # Exchange a 3-list with remote
-        loop.create_task(self.start(loop, client_id))
+        loop.create_task(self.start(loop))
 
-    async def start(self, loop, client_id):
-        conn = await server.client_conn(client_id)  # Wait for the specific EP8266
-        loop.create_task(self.reader(conn, client_id))
-        loop.create_task(self.writer(conn, client_id))
+    async def start(self, loop):
+        # await connection from the specific EP8266 client
+        self.conn = await server.client_conn(self.client_id)
+        loop.create_task(self.reader())
+        loop.create_task(self.writer())
 
-    async def reader(self, conn, client_id):
+    async def reader(self):
         while True:
-            line = await conn.readline()  # Pause in event of outage
+            # Next line will pause for client to send a message. In event of an
+            # outage it will pause for its duration.
+            line = await self.conn.readline()
             self.data = json.loads(line)
-            print('Got', self.data, 'from remote', client_id)
+            print('Got', self.data, 'from remote', self.client_id)
 
-    async def writer(self, conn, client_id):
+    async def writer(self):
         count = 0
         while True:
             self.data[0] = count
             count += 1
-            print('Sent', self.data, 'to remote', client_id, '\n')
-            await conn.write(json.dumps(self.data))  # Pause in event of outage
+            print('Sent', self.data, 'to remote', self.client_id, '\n')
+            await self.conn.write(json.dumps(self.data))  # May pause in event of outage
             await asyncio.sleep(5)
         
 
 def run():
     loop = asyncio.get_event_loop()
-    clients = [App(loop, n) for n in range(1, 5)]  # Accept 4 clients with ID's 1-4
+    clients = {1, 2, 3, 4}
+    apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, 10, False))
+        loop.run_until_complete(server.run(loop, clients, False, local.PORT, local.TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
@@ -351,6 +435,21 @@ is isuued, the coroutine will pause until connectivity is (re)established.
 
 The server buffers incoming messages but it is good practice to have a coro
 which spends most of its time waiting for incoming data.
+
+Server module coroutines:
+
+ 1. `run` Args: `loop` `expected` `verbose=False` `port=8123` `timeout=1500`
+ This is the main coro and starts the system. 
+ `loop` is the event loop. `expected` is a set containing the ID's of all clients. 
+ `verbose` causes debug messages to be printed. `port` is the port to listen to
+  and `timeout` is the amount of ms that can pass without a keepalive until the 
+  connection is considered dead.
+ 2. `client_conn` Arg: `client_id`. Returns the `Connection` instance for the
+ specified client when that client first connects.
+ 3. `wait_all` Arg: `client_id=None` Behaves as `client_conn` except that it
+ pauses until all expected clients have connected. If `None` is passed, the
+ assumption is that the current client is already connected. Pauses until all
+ other clients are also ready.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -420,13 +519,20 @@ frozen bytecode. Free RAM of 23.8KB was achieved with compiled firmware with
 
 ###### [Contents](./README.md#1-contents)
 
-# 9. Planned enhancements
+# 9. Extension to the Pyboard
 
- 1. Produce demo code for qos == 2.
- 2. Produce a demo of one client controlling another.
- 3. Extend the protocol to the Pyboard. In this instance the client side
- application runs on the Pyboard. The [existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c)
- provides a text based serial interface between the Pyboard and the ESP8266,
- which merely acts as a relay passing the data to the server-side application
- via the resilient link. The code running on the ESP8266 will be fixed and
- probably also supplied as a firmware binary.
+This is a work in progress, working but needs further testing. It uses I2C to
+link a Pyboard to an ESP8266. The latter runs a fixed firmware build needing no
+user code. This extends the resilient link to the Pyboard. It uses the
+[existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c).
+
+![Image](images/block_diagram_pyboard.png)
+
+Resilient behaviour includes automatic recovery from WiFi and server outages;
+also from ESP8266 crashes.
+
+# 10. Planned enhancements
+
+Implement the library as Python packages. Perform configuration with
+constructor args rather than direct import of `config.py`. (Changes offered by
+Kevin Köck).

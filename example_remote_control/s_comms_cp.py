@@ -11,10 +11,8 @@
 import asyncio
 import json
 
-try:
-    from ..server import server_cp as server
-except:
-    from server import server_cp as server
+from micropython_iot import server_cp as server
+from .local import PORT, TIMEOUT
 
 
 class App:
@@ -68,7 +66,7 @@ def run():
     loop = asyncio.get_event_loop()
     clients = [App(loop, name) for name in ('tx', 'rx')]  # Accept 2 clients
     try:
-        loop.run_until_complete(server.run(loop, 10, False))
+        loop.run_until_complete(server.run(loop, 10, False, PORT, TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
