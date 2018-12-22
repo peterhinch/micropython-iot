@@ -17,7 +17,7 @@ from .local import PORT, TIMEOUT
 
 class App:
     data = None
-    clients = {'rx', 'tx'}  # Expected clients
+    trig_send = asyncio.Event()
 
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
@@ -27,17 +27,9 @@ class App:
     async def start(self, loop):
         my_id = self.client_id
         print('Client {} Awaiting connection.'.format(my_id))
-        # Wait for this client to connect
-        self.conn = await server.client_conn(my_id)
-        print('Got connect from client {} - waiting for peers.'.format(my_id))
-        try:
-            App.clients.remove(my_id)
-        except KeyError:
-            print('Warning: unexpected or duplicate client ID', my_id)
-        # Wait for all clients to connect: other App instances remove their ID
-        while len(App.clients):
-            await asyncio.sleep(1)
-        print('All peers are connected.')
+        # Wait for all clients to connect
+        self.conn = await server.wait_all(my_id)
+        print('Message from {}: all peers are connected.'.format(my_id))
 
         if my_id == 'tx':  # Client is sending
             loop.create_task(self.reader())
@@ -50,23 +42,25 @@ class App:
             line = await self.conn.readline()  # Pause in event of outage
             App.data = json.loads(line)
             print('Got', App.data, 'from remote', self.client_id)
+            App.trig_send.set()
 
     async def writer(self):
         print('Started writer')
         data = None
         while True:
-            while App.data == data:
-                await asyncio.sleep(0)
+            await App.trig_send.wait()
+            App.trig_send.clear()
             data = App.data
             await self.conn.write(json.dumps(data), False)  # Reduce latency
             print('Sent', data, 'to remote', self.client_id, '\n')
 
 
 def run():
+    clients = {'rx', 'tx'}  # Expected clients
     loop = asyncio.get_event_loop()
-    clients = [App(loop, name) for name in ('tx', 'rx')]  # Accept 2 clients
+    apps = [App(loop, name) for name in clients]  # Accept 2 clients
     try:
-        loop.run_until_complete(server.run(loop, 10, False, PORT, TIMEOUT))
+        loop.run_until_complete(server.run(loop, clients, False, PORT, TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

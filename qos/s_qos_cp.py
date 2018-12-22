@@ -8,8 +8,7 @@
 # Copyright (C) Peter Hinch 2018
 
 # The App class emulates a user application intended to service a single
-# client. In this case we have four instances of the application servicing
-# clients with ID's 1-4.
+# client.
 
 import asyncio
 import json
@@ -71,9 +70,9 @@ class App:
 
 def run():
     loop = asyncio.get_event_loop()
-    client = App(loop, 'qos')  # Accept 1 client with id "qos"
+    app = App(loop, 'qos')
     try:
-        loop.run_until_complete(server.run(loop, 10, False, PORT, TIMEOUT))
+        loop.run_until_complete(server.run(loop, {'qos'}, False, PORT, TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

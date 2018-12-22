@@ -52,13 +52,25 @@ async def client_conn(client_id):
         await asyncio.sleep(0.5)
 
 
+# App waits for all expected clients to connect.
+async def wait_all(client_id=None):
+    conn = None
+    if client_id is not None:
+        conn = await client_conn(client_id)
+    while len(Connection.expected):
+        await asyncio.sleep(0.5)
+    return conn
+
+
 # API: application calls server.run()
-async def run(loop, nconns=10, verbose=False, port=8123, timeout=1500):
+async def run(loop, expected, verbose=False, port=8123, timeout=1500):
     addr = socket.getaddrinfo('0.0.0.0', port, 0, socket.SOCK_STREAM)[0][-1]
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s_sock.bind(addr)
-    s_sock.listen(nconns)
+    # Allow 2 extra connections: provide a meaningful message if expected
+    # client set is too short for actual hardware.
+    s_sock.listen(len(expected) + 2)
     global TO_SECS
     global TIMEOUT
     global TIM_SHORT
@@ -81,7 +93,7 @@ async def run(loop, nconns=10, verbose=False, port=8123, timeout=1500):
                 c_sock.close()
             else:
                 verbose and print('Got connection from client', client_id)
-                Connection.go(loop, client_id, verbose, c_sock, s_sock)
+                Connection.go(loop, client_id, verbose, c_sock, s_sock, expected)
         await asyncio.sleep(0.2)
 
 
@@ -90,12 +102,14 @@ async def run(loop, nconns=10, verbose=False, port=8123, timeout=1500):
 # socket and setting .sock to None (.status() == False).
 class Connection:
     conns = {}  # index: client_id. value: Connection instance
+    expected = set()  # Expected client_id's
     server_sock = None
 
     @classmethod
-    def go(cls, loop, client_id, verbose, c_sock, s_sock):
-        if cls.server_sock is None:
+    def go(cls, loop, client_id, verbose, c_sock, s_sock, expected):
+        if cls.server_sock is None:  # 1st invocation
             cls.server_sock = s_sock
+            cls.expected.update(expected)
         if client_id not in cls.conns:  # New client: instantiate Connection
             Connection(loop, client_id, verbose)
         cls.conns[client_id].sock = c_sock
@@ -111,6 +125,10 @@ class Connection:
         self.client_id = client_id
         self.verbose = verbose
         Connection.conns[client_id] = self
+        try:
+            Connection.expected.remove(client_id)
+        except KeyError:
+            print('Warning: unexpected or duplicate client:', client_id, Connection.expected)
         self.lock = asyncio.Lock()
         self.sock = None  # Socket
         loop.create_task(self._keepalive())
