@@ -156,25 +156,26 @@ constants must be common to all clients and the server:
 
 ## 3.1 Installation
 
+This section describes the installation of the library and all demos on an
+ESP8266 client.
+
+#### Firmware
+
 It is recommended to use the latest release build of firmware as such builds
-incorporate `uasyncio` as frozen bytecode. Daily builds do not. With a release
-build copy the above client files to the device. Edit `local.py` for each example
-as described below and copy it to the device. Ensure the device has a stored 
-WiFi connection and run the demo.
-To run the demo the file `local.py` for the corresponding example should be edited 
-for the server IP address.
-The demo supports up to four clients. Each client's `local.py` should be edited
-to give each client a unique client ID in range 1..4. Note that the ESP8266
-must have a stored network connection to access the server.
-
-On the server ensure that `local.py` is on the path and run `s_app_cp.py`.
-
-Alternatively to maximise free RAM, firmware can be built from source, freezing
-`uasyncio`, `client.py` and `primitives.py` as bytecode.
+incorporate `uasyncio` as frozen bytecode. Daily builds do not. Alternatively
+to maximise free RAM, firmware can be built from source, freezing `uasyncio`,
+`client.py` and `primitives.py` as bytecode.
 
 If a daily build is used it will be necessary to
 [cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
 `client.py`
+
+#### Dependency
+
+Ensure that `uasyncio` is installed or frozen as bytecode. Either the official
+or the `fast_io` version may be used.
+
+#### File copy
 
 To get the files onto your ESP8266 do NOT copy single files as this repository is
 built to be used as a python package. This means that you have to retain the file
@@ -196,27 +197,68 @@ Now you have successfully synchronized the repository onto your device.
 The other way is to freeze it into the firmware by copying the repository to the
 micropython/ports/esp8266/modules directory and compiling the build.
 
+#### Preconditions
+
+Ensure the device has a stored WiFi connection.
+
+The file `local.py` on the client contains configuration data such as the
+server port and IP address. It also contains a client ID which must be unique
+to every client which is concurrently connected to the server.
+
+On the server each demo directory contains a file `local.py` which may need to
+be adapted, for example if a different port is to be used. Note that the
+examples below specify `python3`. In every case `micropython` may be
+substituted to run under the Unix build of MicroPython.
+
 ## 3.2 Usage
 
-On the esp8266 you can now run every example using the following syntax:
+#### The main demo
+
+This illustrates up to four clients communicating with the server. The demo
+expects the clients to have ID's in the range 1 to 4.
+
+On the server navigate to the parent directory of `micropyhton_iot`and run:
+```
+python3 -m micropython_iot.examples.s_app_cp
+```
+On each client edit the file `/pyboard/examples/local.py` to ensure that each
+has a unique ID in range 1-4. Run
 ```
 from micropython_iot.examples import c_app
+```
+
+#### The remote control demo
+
+This shows one ESP8266 controlling another. The transmitter should have a
+pushbutton between GPIO 0 and gnd. The file
+`/pyboard/example_remote_control/local.py` on each device should be edited so
+that the transmitting device has the ID `tx` and the receiving device `rx`.
+
+On the server navigate to the parent directory of `micropyhton_iot` and run:
+```
+python3 -m micropython_iot.example_remote_control.s_comms_cp
+```
+
+On the esp8266 run (on transmitter and receiver respectively):
+
+```
 from micropython_iot.example_remote_control import c_comms_tx
 from micropython_iot.example_remote_control import c_comms_rx
+```
+
+#### The qos demo
+
+This illustrates a way to ensure guaranteed message delivery. On the server
+navigate to the parent directory of `micropyhton_iot`and run:
+```
+python3 -m micropython_iot.qos.s_qos_cp
+```
+On the client, after editing `/pyboard/qos/local.py`, run:
+```
 from micropython_iot.qos import c_qos
 ```
 
-To run the server application demos, navigate to the parent directory of
-`micropyhton_iot`. Then each demo may be run as follows:
-```
-python3 -m micropython_iot.examples.s_app_cp
-python3 -m micropython_iot.example_remote_control.s_comms_cp
-python3 -m micropython_iot.qos.s_qos_cp
-```
-Substitute `micropython` for `python3` to run under the Unix build of
-MicroPython.
-
-#### Troubleshooting the demo
+#### Troubleshooting the demos
 
 Startup behaviour:
  1. Client repeatedly detects failure and re-initialises WiFi. Check server is
