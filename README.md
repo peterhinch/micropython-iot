@@ -224,7 +224,7 @@ Startup behaviour:
 
 #### Further demos
 
-The directories [qos](./qos/README.md) and [comms](./comms/README.md) contain
+The directories [qos](./qos/README.md) and [example_remote_control](./example_remote_control/README.md) contain
 further demos.
 
 ###### [Contents](./README.md#1-contents)
