@@ -8,30 +8,47 @@ import gc
 gc.collect()
 import usocket as socket
 import uasyncio as asyncio
-import primitives as asyn  # Stripped down version of asyn.py
+
+from . import primitives as asyn  # Stripped down version of asyn.py
+
 import network
 import utime
-from local import *
 
 gc.collect()
 
+type_gen = type((lambda: (yield))())  # Generator type
+
+
+# If a callback is passed, run it and return.
+# If a coro is passed initiate it and return.
+# coros are passed by name i.e. not using function call syntax.
+def launch(func, *tup_args):
+    res = func(*tup_args)
+    if isinstance(res, type_gen):
+        loop = asyncio.get_event_loop()
+        loop.create_task(res)
+
 
 class Client:
-    def __init__(self, loop, verbose=False, led=None):
-        self.timeout = TIMEOUT  # Server timeout from local.py
+    def __init__(self, loop, my_id, server, port, timeout, connected_cb=None, connected_cb_args=None,
+                 verbose=False, led=None):
+        self.timeout = timeout  # Server timeout
         self.verbose = verbose
         self.led = led
+        self.my_id = my_id
         self._sta_if = network.WLAN(network.STA_IF)
         self._sta_if.active(True)
         ap = network.WLAN(network.AP_IF)
         ap.active(False)
-        self.server = socket.getaddrinfo(SERVER, PORT)[0][-1]  # server read
+        self.server = socket.getaddrinfo(server, port)[0][-1]  # server read
         gc.collect()
         self.evfail = asyn.Event(100)  # 100ms pause
         self.evread = asyn.Event(100)
         self.evsend = asyn.Event(100)
         self.lock = asyn.Lock(100)
         self.connects = 0  # Connect count for test purposes/app access
+        self._concb = connected_cb
+        self._concbargs = connected_cb_args or ()
         self.sock = None
         self.ok = False  # Set after 1st successful read
         gc.collect()
@@ -41,6 +58,8 @@ class Client:
     def __iter__(self):  # App can await a connection
         while not self.ok:
             yield from asyncio.sleep_ms(500)
+
+    __await__ = __iter__
 
     def status(self):
         return self.ok
@@ -55,7 +74,7 @@ class Client:
         end = utime.ticks_add(self.timeout, utime.ticks_ms())
         if not buf.endswith('\n'):
             buf = ''.join((buf, '\n'))
-        self.evsend.set(buf)  # Cleared after apparently succesful tx
+        self.evsend.set(buf)  # Cleared after apparently successful tx
         while self.evsend.is_set():
             await asyncio.sleep_ms(30)
         if pause:
@@ -94,7 +113,7 @@ class Client:
             try:
                 self.sock.connect(self.server)
                 self.sock.setblocking(False)
-                await self._send(MY_ID)  # Can throw OSError
+                await self._send(self.my_id)  # Can throw OSError
             except OSError:
                 pass
             else:
@@ -105,16 +124,22 @@ class Client:
                 loop.create_task(_writer)
                 _keepalive = self._keepalive()
                 loop.create_task(_keepalive)
+                if self._concb:
+                    # apps might need to know if they lost connection to the server
+                    launch(self._concb, True, *self._concbargs)
                 await self.evfail  # Pause until something goes wrong
                 self.ok = False
                 asyncio.cancel(_reader)
                 asyncio.cancel(_writer)
                 asyncio.cancel(_keepalive)
+                if self._concb:
+                    # apps might need to know if they lost connection to the server
+                    launch(self._concb, False, *self._concbargs)
                 await asyncio.sleep(1)  # wait for cancellation
                 self.close()  # Close sockets
                 self.verbose and print('Fail detected.')
-            s.disconnect()
-            await asyncio.sleep(1)
+                s.disconnect()
+                await asyncio.sleep(1)
             while s.isconnected():
                 await asyncio.sleep(1)
 
@@ -124,7 +149,7 @@ class Client:
         try:
             while True:
                 r = await self._readline()  # OSError on fail
-                self.evread.set(r)  # Read succeded: flag .readline
+                self.evread.set(r)  # Read succeeded: flag .readline
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
