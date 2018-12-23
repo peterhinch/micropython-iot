@@ -24,7 +24,7 @@ The approach advocated here simplifies writing resilient ESP8266 IOT
 applications by providing a communications channel with inherent resilience.
 
 The usual arrangement for MicroPython internet access is as below.
-![Image](https://github.com/peterhinch/micropython-samples/images/block_diagram_orig.png)
+![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram_orig.png)
 
 Running internet protocols on ESP8266 nodes has the following drawbacks:
  1. It can be difficult to ensure resilience in the face of outages of WiFi and
@@ -43,7 +43,7 @@ communicate using a simple protocol based on the exchange of lines of text. The
 server can run on a Linux box such as a Raspberry Pi; this can run 24/7 at
 minimal running cost.
 
-![Image](https://github.com/peterhinch/micropython-samples/images/block_diagram.png)  
+![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram.png)  
 
 Benefits are:
  1. Security is handled on a device with an OS. Updates are easily accomplished.
@@ -544,7 +544,7 @@ link a Pyboard to an ESP8266. The latter runs a fixed firmware build needing no
 user code. This extends the resilient link to the Pyboard. It uses the
 [existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c).
 
-![Image](https://github.com/peterhinch/micropython-samples/images/block_diagram_pyboard.png)
+![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram_pyboard.png)
 
 Resilient behaviour includes automatic recovery from WiFi and server outages;
 also from ESP8266 crashes.
