@@ -19,7 +19,10 @@ try:
     import json
 except ImportError:
     import ujson as json
-import server_cp as server
+
+from micropython_iot import server_cp as server
+from .local import PORT, TIMEOUT
+
 
 class App:
     def __init__(self, loop, client_id):
@@ -54,19 +57,20 @@ class App:
             # .write() behaves as per .readline()
             await self.conn.write(json.dumps(self.data))
             await asyncio.sleep(5)
-        
+
 
 def run():
     loop = asyncio.get_event_loop()
     clients = {'1', '2', '3', '4'}
     apps = [App(loop, str(n)) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, clients, False))
+        loop.run_until_complete(server.run(loop, clients, False, PORT, TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
         print('Closing sockets')
         server.Connection.close_all()
+
 
 if __name__ == "__main__":
     run()

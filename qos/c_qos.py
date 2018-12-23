@@ -5,17 +5,20 @@
 
 import gc
 import uasyncio as asyncio
+
 gc.collect()
 import ujson
-import client
 from machine import Pin
-from local import TIMEOUT
+from . import local
+from micropython_iot import client
 
-class App():
-    def __init__(self, loop, verbose):
+
+class App:
+    def __init__(self, loop, my_id, server, port, timeout, verbose):
         self.verbose = verbose
-        led = Pin(2, Pin.OUT, value = 1)  # Optional LED
-        self.cl = client.Client(loop, verbose, led)
+        self.timeout = timeout
+        led = Pin(2, Pin.OUT, value=1)  # Optional LED
+        self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, led)
         self.tx_msg_id = 1
         self.rx_msg_id = None  # Incoming ID
         self.dupes_ignored = 0  # Incoming dupe count
@@ -55,16 +58,17 @@ class App():
             print('Sent', data, 'to server app\n')
             dstr = ujson.dumps(data)
             await self.cl.write(dstr)
-            await asyncio.sleep_ms(TIMEOUT)  # time for outage detection
+            await asyncio.sleep_ms(self.timeout)  # time for outage detection
             if not self.cl.status():  # Meassage may have been lost
                 await self.cl.write(dstr)  # Re-send: will wait until outage clears
             await asyncio.sleep(5)
-        
+
     def close(self):
         self.cl.close()
 
+
 loop = asyncio.get_event_loop()
-app = App(loop, True)
+app = App(loop, local.MY_ID, local.SERVER, local.PORT, local.TIMEOUT, True)
 try:
     loop.run_forever()
 finally:

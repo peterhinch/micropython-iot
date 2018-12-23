@@ -32,9 +32,9 @@ sending coro works as follows:
 ```
 Consider the following cases:
  1. Outage occurs and is detected before the initial write. The write waits
- until the outage is cleared and proceeds succesfully. On completion `status`
+ until the outage is cleared and proceeds successfully. On completion `status`
  returns `True` and no retransmission will occur.
- 2. Outage preceeds initial write but is not yet detected. The initial write
+ 2. Outage precedes initial write but is not yet detected. The initial write
  puts data into a socket whose peer is lost. The delay ensures that, by the
  time `status` is called, the outage will have been detected. Retransmission
  occurs and the message is received once. (Actual retransmission is delayed by
@@ -50,7 +50,7 @@ The following demos illustrate this technique:
 It is perhaps worth noting that the discarding of duplicates is based on
 packets being sent in order. If there is more than one coro sending data,
 packets may be received out of order. Detecting duplicates becomes more
-dificult.
+difficult.
 
 At risk of stating the obvious, the above algorithm limits the throughput
 of the `writer` coroutine because of the pause after transmission.

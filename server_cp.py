@@ -12,6 +12,7 @@
 
 # Run under CPython 3.5+ or MicroPython Unix build
 import sys
+
 upython = sys.implementation.name == 'micropython'
 if upython:
     import usocket as socket
@@ -28,12 +29,6 @@ else:
     import select
     import errno
     Lock = asyncio.Lock
-
-from local import PORT, TIMEOUT
-
-TO_SECS = TIMEOUT / 1000  # ms to seconds
-TIM_SHORT = TO_SECS / 10  # Delay << timeout
-TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
 
 # Read the node ID. There isn't yet a Connection instance.
@@ -57,21 +52,64 @@ async def _readid(s):
         else:
             if d == '' or (time.time() - start) > TO_SECS:
                 raise OSError  # Reset by peer or t/o
+<<<<<<< HEAD
             data = ''.join((data, d))
             if data.find('\n') != -1:  # >= one line
                 return data
         await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
+=======
+            line = ''.join((line, d))
+            if len(line) and line.endswith('\n'):
+                return line.rstrip()
+        await asyncio.sleep(0)
+
+
+# Server-side app waits for a working connection
+async def client_conn(client_id):
+    while True:
+        if client_id in Connection.conns:
+            c = Connection.conns[client_id]
+            # await c
+            # works but under CPython produces runtime warnings. So do:
+            await c._status_coro()
+            return c
+        await asyncio.sleep(0.5)
+
+
+# App waits for all expected clients to connect.
+async def wait_all(client_id=None):
+    conn = None
+    if client_id is not None:
+        conn = await client_conn(client_id)
+    while len(Connection.expected):
+        await asyncio.sleep(0.5)
+    return conn
+>>>>>>> d7159160264659316bb2f360aaeaf9205915b311
+
 
 # API: application calls server.run()
+<<<<<<< HEAD
 # Allow 2 extra connections. This is to cater for error conditions like
 # duplicate or unexpected clients. Accept the connection and have the
 # Connection class produce a meaningful error message.
 async def run(loop, expected, verbose=False):
     addr = socket.getaddrinfo('0.0.0.0', PORT, 0, socket.SOCK_STREAM)[0][-1]
+=======
+async def run(loop, expected, verbose=False, port=8123, timeout=1500):
+    addr = socket.getaddrinfo('0.0.0.0', port, 0, socket.SOCK_STREAM)[0][-1]
+>>>>>>> d7159160264659316bb2f360aaeaf9205915b311
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s_sock.bind(addr)
     s_sock.listen(len(expected) + 2)
+    global TO_SECS
+    global TIMEOUT
+    global TIM_SHORT
+    global TIM_TINY
+    TIMEOUT = timeout
+    TO_SECS = timeout / 1000  # ms to seconds
+    TIM_SHORT = TO_SECS / 10  # Delay << timeout
+    TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
     verbose and print('Awaiting connection.')
     poller = select.poll()
     poller.register(s_sock, select.POLLIN)
@@ -101,6 +139,7 @@ class Connection:
     _server_sock = None
 
     @classmethod
+<<<<<<< HEAD
     def go(cls, loop, client_id, init_str, verbose, c_sock, s_sock, expected):
         if cls._server_sock is None:  # 1st invocation
             cls._server_sock = s_sock
@@ -139,6 +178,16 @@ class Connection:
             while not set(cls._conns.keys()).issuperset(peers):
                 await asyncio.sleep(0.5)
         return conn
+=======
+    def go(cls, loop, client_id, verbose, c_sock, s_sock, expected):
+        if cls.server_sock is None:  # 1st invocation
+            cls.server_sock = s_sock
+            cls.expected.update(expected)
+        if client_id in cls.conns:  # Old client, new socket
+            cls.conns[client_id].sock = c_sock
+        else:  # New client: instantiate Connection
+            Connection(loop, c_sock, client_id, verbose)
+>>>>>>> d7159160264659316bb2f360aaeaf9205915b311
 
     @classmethod
     def close_all(cls):
@@ -200,7 +249,7 @@ class Connection:
                 yield TIM_SHORT
         else:  # CPython: Meet requirement for generator in __await__
             return self._status_coro().__await__()
-    
+
     __iter__ = __await__
 
     async def _status_coro(self):
