@@ -24,7 +24,7 @@ The approach advocated here simplifies writing resilient ESP8266 IOT
 applications by providing a communications channel with inherent resilience.
 
 The usual arrangement for MicroPython internet access is as below.
-![Image](images/block_diagram_orig.png)
+![Image](https://github.com/peterhinch/micropython-samples/images/block_diagram_orig.png)
 
 Running internet protocols on ESP8266 nodes has the following drawbacks:
  1. It can be difficult to ensure resilience in the face of outages of WiFi and
@@ -43,7 +43,7 @@ communicate using a simple protocol based on the exchange of lines of text. The
 server can run on a Linux box such as a Raspberry Pi; this can run 24/7 at
 minimal running cost.
 
-![Image](images/block_diagram.png)  
+![Image](https://github.com/peterhinch/micropython-samples/images/block_diagram.png)  
 
 Benefits are:
  1. Security is handled on a device with an OS. Updates are easily accomplished.
@@ -132,15 +132,16 @@ incoming connection.
 
 # 3. Files
 
-1. `client.py` Client module for ESP8266.
-2. `primitives.py` Stripped down version of `asyn.py`.
-3. `server_cp.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
-4. `examples` Package of a general example for client and server usage
+ 1. `client.py` Client module for ESP8266.
+ 2. `primitives.py` Stripped down version of `asyn.py`.
+ 3. `server_cp.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
+ 4. `examples` Package of a general example for client and server usage
     4.1. `c_app.py` Demo client-side application.
     4.2. `s_app_cp.py` Demo server-side application.
     4.3. `local.py` Example of local config file.
-5. `examples_remote_control` Package of a specific example of using the library to remote control another esp8266, see [README](./example_remote_control/README.md)
-6. `qos` Package of an example qos implementation, see [README](./qos/README.md)
+ 5. `examples_remote_control` Package of a specific example of using the library
+ to remote control another esp8266, see [README](./example_remote_control/README.md)
+ 6. `qos` Package of an example qos implementation, see [README](./qos/README.md)
 
 `local.py` should be edited to ensure each client has a unique ID. Other
 constants must be common to all clients and the server:
@@ -181,21 +182,18 @@ The easiest way is to clone the repository:
 ```
 git clone https://github.com/peterhinch/micropython-iot micropython_iot
 ```
-It's important to clone it into a directory *micropyhton_iot* as python does not like
-packages that have a "-" character in their name. 
+It's important to clone it into a directory *micropyhton_iot* as python does
+not like packages that have a "-" character in their name. 
 Then you need [rshell](https://github.com/dhylands/rshell) and follow these commands:
 ```
 rshell -p /dev/ttyS3  # adapt the port to your situation
-mkdir /pyboard/micropython_iot   # create directory on your esp822 
-(yes you need to use /pyboard here, at least I do)
+mkdir /pyboard/micropython_iot   # create directory on your esp8266  
 rsync micropython_iot /pyboard/micropython_iot -v -m
-(this can take a while, you might have to do it again if it fails early during the image
-transfer of "block_diagram_orig.odg". There's no exclude option for rsync yet)
 ```
 Now you have successfully synchronized the repository onto your device.
 
 The other way is to freeze it into the firmware by copying the repository to the
-micropython/ports/esp8266 directory.
+micropython/ports/esp8266/modules directory and compiling the build.
 
 ## 3.2 Usage
 
@@ -207,13 +205,15 @@ from micropython_iot.example_remote_control import c_comms_rx
 from micropython_iot.qos import c_qos
 ```
 
-
-The server part can be used like this when the current directory contains micropython_iot:
+To run the server application demos, navigate to the parent directory of
+`micropyhton_iot`. Then each demo may be run as follows:
 ```
 python3 -m micropython_iot.examples.s_app_cp
 python3 -m micropython_iot.example_remote_control.s_comms_cp
 python3 -m micropython_iot.qos.s_qos_cp
 ```
+Substitute `micropython` for `python3` to run under the Unix build of
+MicroPython.
 
 #### Troubleshooting the demo
 
@@ -544,7 +544,7 @@ link a Pyboard to an ESP8266. The latter runs a fixed firmware build needing no
 user code. This extends the resilient link to the Pyboard. It uses the
 [existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c).
 
-![Image](images/block_diagram_pyboard.png)
+![Image](https://github.com/peterhinch/micropython-samples/images/block_diagram_pyboard.png)
 
 Resilient behaviour includes automatic recovery from WiFi and server outages;
 also from ESP8266 crashes.
