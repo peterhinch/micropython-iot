@@ -1,7 +1,8 @@
 # NOTE: Under development!
 
-The server-side API has changed: in particular the `run` coro args. See
-[section 10](./README.md#10-planned-enhancements) for forthcoming changes.
+This library has been refactored as Python packages. Other API changes have
+been implemented. Notably local configuration is now done by Client constructor
+args.
 
 # 0. MicroPython IOT application design
 
@@ -224,8 +225,9 @@ Startup behaviour:
 
 #### Further demos
 
-The directories [qos](./qos/README.md) and [comms](./comms/README.md) contain
-further demos.
+The directories [qos](./qos/README.md) and
+[example_remote_control](./example_remote_control/README.md) contain further
+demos.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -551,6 +553,4 @@ also from ESP8266 crashes.
 
 # 10. Planned enhancements
 
-Implement the library as Python packages. Perform configuration with
-constructor args rather than direct import of `config.py`. (Changes offered by
-Kevin Köck).
+Improve client-side behaviour when problems occur at boot time.
