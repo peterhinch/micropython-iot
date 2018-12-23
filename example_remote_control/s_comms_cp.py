@@ -8,8 +8,17 @@
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2018
 
-import asyncio
-import json
+import sys
+
+upython = sys.implementation.name == 'micropython'
+
+if upython:
+    import uasyncio as asyncio
+    import ujson as json
+    import primitives
+else:
+    import asyncio
+    import json
 
 from micropython_iot import server_cp as server
 from .local import PORT, TIMEOUT
@@ -17,7 +26,10 @@ from .local import PORT, TIMEOUT
 
 class App:
     data = None
-    trig_send = asyncio.Event()
+    if upython:
+        trig_send = primitives.Event()
+    else:
+        trig_send = asyncio.Event()
 
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client

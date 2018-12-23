@@ -11,8 +11,14 @@
 # client. In this case we have four instances of the application servicing
 # clients with ID's 1-4.
 
-import asyncio
-import json
+try:
+    import asyncio
+except ImportError:
+    import uasyncio as asyncio
+try:
+    import json
+except ImportError:
+    import ujson as json
 
 from micropython_iot import server_cp as server
 from .local import PORT, TIMEOUT
