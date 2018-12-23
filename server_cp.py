@@ -20,12 +20,14 @@ if upython:
     import uselect as select
     import uerrno as errno
     import primitives
+    Lock = primitives.Lock
 else:
     import socket
     import asyncio
     import time
     import select
     import errno
+    Lock = asyncio.Lock
 
 from local import PORT, TIMEOUT
 
@@ -34,59 +36,41 @@ TIM_SHORT = TO_SECS / 10  # Delay << timeout
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
 
-# Read the node ID. This reads data one byte at a time: there isn't yet a
-# Connection instance to store incoming data.
+# Read the node ID. There isn't yet a Connection instance.
+# CPython does not have socket.readline. Further, the socket may return more
+# than one line after an outage. The first line holds the client_id.
+
+# Note re OSError: did detect errno.EWOULDBLOCK. Not supported in MicroPython.
+# In cpython EWOULDBLOCK == EAGAIN == 11.
 async def _readid(s):
-    line = ''
+    data = ''
     start = time.time()
     while True:
         try:
-            d = s.recv(1).decode()
+            d = s.recv(4096).decode()
         except OSError as e:
             err = e.args[0]
             if err == errno.EAGAIN:
-                # Note: did have or err == errno.EWOULDBLOCK. Not supported in
-                # upython. In cpython EWOULDBLOCK == EAGAIN == 11.
-                await asyncio.sleep(TIM_SHORT)
+                pass
             else:
                 raise OSError  # Reset by peer 104
         else:
             if d == '' or (time.time() - start) > TO_SECS:
                 raise OSError  # Reset by peer or t/o
-            line = ''.join((line, d))
-            if len(line) and line.endswith('\n'):
-                return line.rstrip()
-        await asyncio.sleep(0)
-
-
-# Server-side app waits for a working connection
-async def client_conn(client_id):
-    while True:
-        if client_id in Connection.conns:
-            c = Connection.conns[client_id]
-            # await c 
-            # works but under CPython produces runtime warnings. So do:
-            await c._status_coro()
-            return c
-        await asyncio.sleep(0.5)
-
-# App waits for all expected clients to connect.
-async def wait_all(client_id=None):
-    conn = None
-    if client_id is not None:
-        conn = await client_conn(client_id)
-    while len(Connection.expected):
-        await asyncio.sleep(0.5)
-    return conn
+            data = ''.join((data, d))
+            if data.find('\n') != -1:  # >= one line
+                return data
+        await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
 
 # API: application calls server.run()
+# Allow 2 extra connections. This is to cater for error conditions like
+# duplicate or unexpected clients. Accept the connection and have the
+# Connection class produce a meaningful error message.
 async def run(loop, expected, verbose=False):
     addr = socket.getaddrinfo('0.0.0.0', PORT, 0, socket.SOCK_STREAM)[0][-1]
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s_sock.bind(addr)
-    # Allow 2 extra connections: provide a meaningful message if expected
-    # client set is too short for actual hardware.
     s_sock.listen(len(expected) + 2)
     verbose and print('Awaiting connection.')
     poller = select.poll()
@@ -97,12 +81,14 @@ async def run(loop, expected, verbose=False):
             c_sock, _ = s_sock.accept()  # get client socket
             c_sock.setblocking(False)
             try:
-                client_id = await _readid(c_sock)
+                data = await _readid(c_sock)
             except OSError:
                 c_sock.close()
             else:
+                client_id, init_str = data.split('\n', 1)
                 verbose and print('Got connection from client', client_id)
-                Connection.go(loop, client_id, verbose, c_sock, s_sock, expected)
+                Connection.go(loop, client_id, init_str, verbose, c_sock,
+                              s_sock, expected)
         await asyncio.sleep(0.2)
 
 
@@ -110,48 +96,78 @@ async def run(loop, expected, verbose=False):
 # If client dies Connection is closed: ._close() flags this state by closing its
 # socket and setting .sock to None (.status() == False).
 class Connection:
-    conns = {}  # index: client_id. value: Connection instance
-    expected = set()  # Expected client_id's
-    server_sock = None
+    _conns = {}  # index: client_id. value: Connection instance
+    _expected = set()  # Expected client_id's
+    _server_sock = None
 
     @classmethod
-    def go(cls, loop, client_id, verbose, c_sock, s_sock, expected):
-        if cls.server_sock is None:  # 1st invocation
-            cls.server_sock = s_sock
-            cls.expected.update(expected)
-        if client_id in cls.conns:  # Old client, new socket
-            cls.conns[client_id].sock = c_sock
+    def go(cls, loop, client_id, init_str, verbose, c_sock, s_sock, expected):
+        if cls._server_sock is None:  # 1st invocation
+            cls._server_sock = s_sock
+            cls._expected.update(expected)
+        if client_id in cls._conns:  # Old client, new socket
+            if cls._conns[client_id].status():
+                print('Duplicate client {} ignored.'.format(client_id))
+                c_sock.close()
+            else:  # Reconnect after failure
+                cls._conns[client_id].sock = c_sock
         else: # New client: instantiate Connection
-            Connection(loop, c_sock, client_id, verbose)
+            Connection(loop, c_sock, client_id, init_str, verbose)
+
+    # Server-side app waits for a working connection
+    @classmethod
+    async def client_conn(cls, client_id):
+        while True:
+            if client_id in cls._conns:
+                c = cls._conns[client_id]
+                # await c 
+                # works but under CPython produces runtime warnings. So do:
+                await c._status_coro()
+                return c
+            await asyncio.sleep(0.5)
+
+    # App waits for all expected clients to connect.
+    @classmethod
+    async def wait_all(cls, client_id=None, peers=None):
+        conn = None
+        if client_id is not None:
+            conn = await client_conn(client_id)
+        if peers is None:  # Wait for all expected clients
+            while len(cls._expected):
+                await asyncio.sleep(0.5)
+        else:
+            while not set(cls._conns.keys()).issuperset(peers):
+                await asyncio.sleep(0.5)
+        return conn
 
     @classmethod
     def close_all(cls):
-        for conn in cls.conns.values():
+        for conn in cls._conns.values():
             conn._close()
-        if cls.server_sock is not None:
-            cls.server_sock.close()
+        if cls._server_sock is not None:
+            cls._server_sock.close()
 
-    def __init__(self, loop, c_sock, client_id, verbose):
+    def __init__(self, loop, c_sock, client_id, init_str, verbose):
         self.sock = c_sock  # Socket
         self.client_id = client_id
         self.verbose = verbose
-        Connection.conns[client_id] = self
+        Connection._conns[client_id] = self
         try:
-            Connection.expected.remove(client_id)
+            Connection._expected.remove(client_id)
         except KeyError:
-            print('Warning: unexpected or duplicate client:', client_id, Connection.expected)
-        if upython:
-            self.lock = primitives.Lock()
-        else:
-            self.lock = asyncio.Lock()
+            print('Unknown client {} has connected. Expected {}.'.format(
+                client_id, Connection._expected))
+
+        self.lock = Lock()
         loop.create_task(self._keepalive())
         self.lines = []
-        loop.create_task(self._read())
+        loop.create_task(self._read(init_str))
 
-    async def _read(self):
+    async def _read(self, init_str):
         while True:
+            # Start (or restart after outage) with data left over from .readid
             await self._status_coro()
-            buf = bytearray()
+            buf = bytearray(init_str.encode('utf8'))
             start = time.time()
             while self.status():
                 try:
@@ -161,7 +177,6 @@ class Connection:
                     if err == errno.EAGAIN:
                         if time.time() - start > TO_SECS:
                             self._close()
-                        await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
                     else:
                         self._close()  # Reset by peer 104
                 else:
@@ -174,7 +189,7 @@ class Connection:
                         if len(l) > 1:  # Have at least 1 newline
                             self.lines.extend(l[:-1])
                             buf = bytearray(l[-1].encode('utf8'))
-                await asyncio.sleep(0)
+                await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
 
     def status(self):
         return self.sock is not None
@@ -183,7 +198,7 @@ class Connection:
         if upython:
             while not self.status():
                 yield TIM_SHORT
-        else:
+        else:  # CPython: Meet requirement for generator in __await__
             return self._status_coro().__await__()
     
     __iter__ = __await__
@@ -253,9 +268,16 @@ class Connection:
                     if (time.time() - start) > TO_SECS:
                         raise OSError
 
+    def __getitem__(self, client_id):  # Return a Connection of another client
+        return Connection._conns[client_id]
+
     def _close(self):
         if self.sock is not None:
             self.verbose and print('fail detected')
             if self.sock is not None:
                 self.sock.close()
                 self.sock = None
+
+# API aliases
+client_conn = Connection.client_conn
+wait_all = Connection.wait_all

@@ -140,6 +140,7 @@ For ESP8266 client:
 For server (run under CPython 3.5+ or MicroPython 1.9.4+):
  1. `server_cp.py` Server module.
  2. `s_app_cp.py` Demo server-side application.
+ 3. `primitives.py` Only required for MicroPython.
 
 For both:
  1. `local.py` Example of local config file.
@@ -154,11 +155,11 @@ constants must be common to all clients and the server:
 
 ## 3.1 Installation
 
-It is recommended to use the latest release build of firmware as such builds
-incorporate `uasyncio` as frozen bytecode. Daily builds do not. With a release
-build copy the above client files to the device. Edit `local.py` as described
-below and copy it to the device. Ensure the device has a stored WiFi connection
-and run te demo.
+On client devices it is recommended to use the latest release build of firmware
+as such builds incorporate `uasyncio` as frozen bytecode. Daily builds do not.
+With a release build copy the above client files to the device. Edit `local.py`
+as described below and copy it to the device. Ensure the device has a stored
+WiFi connection and run the demo.
 
 Alternatively to maximise free RAM firmware can be built from source, freezing
 `uasyncio`, `client.py` and `primitives.py` as bytecode.
@@ -369,8 +370,11 @@ Methods (asynchrounous):
  time exceeds the timeout period. This minimises the risk of buffer overruns in
  the event that an outage occurs.
 
-Method (synchronous):
+Methods (synchronous):
  1. `status` Returns `True` if connectivity is present.
+ 2. `__getitem__` Enables the `Connection` of another client to be retrieved
+ using list element access syntax. Will throw a `KeyError` if the client is
+ unknown (has never connected).
 
 Class Method (synchronous):
  1. `close_all` No args. Closes all sockets: call on exception (e.g. ctrl-c).
@@ -391,10 +395,25 @@ Server module coroutines:
  the ID's of all clients. `verbose` causes debug messages to be printed.
  2. `client_conn` Arg: `client_id`. Returns the `Connection` instance for the
  specified client when that client first connects.
- 3. `wait_all` Arg: `client_id=None` Behaves as `client_conn` except that it
- pauses until all expected clients have connected. If `None` is passed, the
- assumption is that the current client is already connected. Pauses until all
- other clients are also ready.
+ 3. `wait_all` Args: `client_id=None` `peers=None`. See below.
+
+The `wait_all` coroutine is intended for applications where clients communicate
+with each other. Typical user code cannot proceed until a given set of clients
+have established initial connectivity.
+
+`wait_all`, where a `client_id` is specified, behaves as `client_conn` except
+that it pauses until further clients have also connected. If `client_id=None`
+the  assumption is that the current client is already connected. It waits until
+a given set of clients have connected and returns `None`.
+
+The `peers` argument defines which clients it must await. If `peers=None` the
+coro pauses until all clients specified to `run` are also ready.  
+
+If a set of `client_id` values is passed as the `peers` arg, it pauses until
+all clients in the set have connected.
+
+It is perhaps worth noting that the user application can impose a timeout on
+this by means of `asyncio.wait_for`.
 
 ###### [Contents](./README.md#1-contents)
 
