@@ -104,7 +104,7 @@ socket, but one which persists through outages.
 
 The code is asynchronous and based on `asyncio`. Client applications on the
 ESP8266 import `client.py` which provides the interface to the link. The server
-side application uses `server_cp.py`.
+side application uses `server.py`.
 
 Messages are required to be complete lines of text. They typically comprise an
 arbitrary Python object encoded using JSON and terminated with a newline.
@@ -135,7 +135,7 @@ incoming connection.
 
  1. `client.py` Client module for ESP8266.
  2. `primitives.py` Stripped down version of `asyn.py`.
- 3. `server_cp.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
+ 3. `server.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
  4. `examples` Package of a general example for client and server usage
     4.1. `c_app.py` Demo client-side application.
     4.2. `s_app_cp.py` Demo server-side application.
@@ -395,7 +395,7 @@ A basic server-side application has this form:
 ```python
 import asyncio
 import json
-from micropython_iot import server_cp as server
+from micropython_iot import server
 import local  # or however you want to configure your project
 
 class App:
