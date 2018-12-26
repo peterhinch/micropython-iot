@@ -30,7 +30,21 @@
 
 import uasyncio as asyncio
 import utime as time
-from .asyn import launch
+
+async def _g():
+    pass
+
+
+type_coro = type(_g())
+
+# If a callback is passed, run it and return.
+# If a coro is passed initiate it and return.
+# coros are passed by name i.e. not using function call syntax.
+def launch(func, tup_args):
+    res = func(*tup_args)
+    if isinstance(res, type_coro):
+        loop = asyncio.get_event_loop()
+        loop.create_task(res)
 
 
 # launch: run a callback or initiate a coroutine depending on which is passed.

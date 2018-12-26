@@ -27,7 +27,7 @@ class App:
         loop.create_task(self.reader())
         loop.create_task(self.writer())
 
-    async def constate(self, state):
+    def constate(self, state):
         print("Connection state:", state)
 
     async def reader(self):

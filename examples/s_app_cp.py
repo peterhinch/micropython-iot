@@ -20,7 +20,7 @@ try:
 except ImportError:
     import ujson as json
 
-from micropython_iot import server_cp as server
+from micropython_iot import server
 from .local import PORT, TIMEOUT
 
 

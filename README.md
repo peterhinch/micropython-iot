@@ -1,7 +1,8 @@
 # NOTE: Under development!
 
-The server-side API has changed: in particular the `run` coro args. See
-[section 10](./README.md#10-planned-enhancements) for forthcoming changes.
+This library has been refactored as Python packages. Other API changes have
+been implemented. Notably local configuration is now done by Client constructor
+args.
 
 # 0. MicroPython IOT application design
 
@@ -24,7 +25,7 @@ The approach advocated here simplifies writing resilient ESP8266 IOT
 applications by providing a communications channel with inherent resilience.
 
 The usual arrangement for MicroPython internet access is as below.
-![Image](images/block_diagram_orig.png)
+![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram_orig.png)
 
 Running internet protocols on ESP8266 nodes has the following drawbacks:
  1. It can be difficult to ensure resilience in the face of outages of WiFi and
@@ -43,7 +44,7 @@ communicate using a simple protocol based on the exchange of lines of text. The
 server can run on a Linux box such as a Raspberry Pi; this can run 24/7 at
 minimal running cost.
 
-![Image](images/block_diagram.png)  
+![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram.png)  
 
 Benefits are:
  1. Security is handled on a device with an OS. Updates are easily accomplished.
@@ -103,7 +104,7 @@ socket, but one which persists through outages.
 
 The code is asynchronous and based on `asyncio`. Client applications on the
 ESP8266 import `client.py` which provides the interface to the link. The server
-side application uses `server_cp.py`.
+side application uses `server.py`.
 
 Messages are required to be complete lines of text. They typically comprise an
 arbitrary Python object encoded using JSON and terminated with a newline.
@@ -132,15 +133,16 @@ incoming connection.
 
 # 3. Files
 
-1. `client.py` Client module for ESP8266.
-2. `primitives.py` Stripped down version of `asyn.py`.
-3. `server_cp.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
-4. `examples` Package of a general example for client and server usage
+ 1. `client.py` Client module for ESP8266.
+ 2. `primitives.py` Stripped down version of `asyn.py`.
+ 3. `server.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
+ 4. `examples` Package of a general example for client and server usage
     4.1. `c_app.py` Demo client-side application.
     4.2. `s_app_cp.py` Demo server-side application.
     4.3. `local.py` Example of local config file.
-5. `examples_remote_control` Package of a specific example of using the library to remote control another esp8266, see [README](./example_remote_control/README.md)
-6. `qos` Package of an example qos implementation, see [README](./qos/README.md)
+ 5. `examples_remote_control` Package of a specific example of using the library
+ to remote control another esp8266, see [README](./example_remote_control/README.md)
+ 6. `qos` Package of an example qos implementation, see [README](./qos/README.md)
 
 `local.py` should be edited to ensure each client has a unique ID. Other
 constants must be common to all clients and the server:
@@ -154,78 +156,126 @@ constants must be common to all clients and the server:
 
 ## 3.1 Installation
 
+This section describes the installation of the library and the demos on an
+ESP8266 client.
+
+#### Firmware/Dependency
+
 It is recommended to use the latest release build of firmware as such builds
-incorporate `uasyncio` as frozen bytecode. Daily builds do not. With a release
-build copy the above client files to the device. Edit `local.py` for each example
-as described below and copy it to the device. Ensure the device has a stored 
-WiFi connection and run the demo.
-To run the demo the file `local.py` for the corresponding example should be edited 
-for the server IP address.
-The demo supports up to four clients. Each client's `local.py` should be edited
-to give each client a unique client ID in range 1..4. Note that the ESP8266
-must have a stored network connection to access the server.
+incorporate `uasyncio` as frozen bytecode. Daily builds do not. Alternatively
+to maximise free RAM, firmware can be built from source, freezing `uasyncio`,
+`client.py` and `primitives.py` as bytecode. **TODO** How to freeze the latter two?
 
-On the server ensure that `local.py` is on the path and run `s_app_cp.py`.
-
-Alternatively to maximise free RAM, firmware can be built from source, freezing
-`uasyncio`, `client.py` and `primitives.py` as bytecode.
+Note that if `uasyncio` is to be installed it should be acquired from 
+[official micropython-lib](https://github.com/micropython/micropython-lib). It
+should not be installed from PyPi using `upip`: the version on PyPi is
+incompatible with official firmware.
 
 If a daily build is used it will be necessary to
 [cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
 `client.py`
 
-To get the files onto your ESP8266 do NOT copy single files as this repository is
-built to be used as a python package. This means that you have to retain the file
-structure for it to work.
+#### Preconditions
+
+Ensure the ESP8266 has a stored WiFi connection.
+
+The file `local.py` on the client contains configuration data such as the
+server port and IP address. It also contains a client ID which must be unique
+to every client which is concurrently connected to the server.
+
+Each demo directory contains a file `local.py` which will need to be adapted,
+to match the local server IP address and possibly to change the default port.
+
+Note that the server-side examples below specify `python3` in the run command.
+In every case `micropython` may be substituted to run under the Unix build of
+MicroPython.
+
+#### File copy
+
+This repository is built to be used as a python package. This means that on the
+ESP8266 the directory structure must be retained.
+
 The easiest way is to clone the repository:
 ```
 git clone https://github.com/peterhinch/micropython-iot micropython_iot
 ```
-It's important to clone it into a directory *micropyhton_iot* as python does not like
-packages that have a "-" character in their name. 
-Then you need [rshell](https://github.com/dhylands/rshell) and follow these commands:
+It's important to clone it into a directory *micropyhton_iot* as python does
+not like packages that have a "-" character in their name.
+
+On the ESP8266 a directory `/pyboard/micropython_iot` should be created and the
+following files copied to it:
+ 1. `client.py`
+ 2. `primitives.py`
+ 3. `__init__.py`
+
+To install the demos the following directories and their contents should be
+copied to `/pyboard/micropython_iot`:
+ 1. `qos`
+ 2. `examples`
+ 3. `example_remote_control`
+
+This can be done using any tool but I recommend
+[rshell](https://github.com/dhylands/rshell). If this is used follow these
+commands:
 ```
 rshell -p /dev/ttyS3  # adapt the port to your situation
-mkdir /pyboard/micropython_iot   # create directory on your esp822 
-(yes you need to use /pyboard here, at least I do)
-rsync micropython_iot /pyboard/micropython_iot -v -m
-(this can take a while, you might have to do it again if it fails early during the image
-transfer of "block_diagram_orig.odg". There's no exclude option for rsync yet)
+mkdir /pyboard/micropython_iot   # create directory on your esp8266  
+cp primitives.py client.py __init__.py /pyboard/micropython_iot/
+cp -r examples /pyboard/micropython_iot/
+cp -r qos /pyboard/micropython_iot/
+cp -r example_remote_control /pyboard/micropython_iot/
 ```
-Now you have successfully synchronized the repository onto your device.
-
-The other way is to freeze it into the firmware by copying the repository to the
-micropython/ports/esp8266 directory.
 
 ## 3.2 Usage
 
-On the esp8266 you can now run every example using the following syntax:
+#### The main demo
+
+This illustrates up to four clients communicating with the server. The demo
+expects the clients to have ID's in the range 1 to 4.
+
+On the server navigate to the parent directory of `micropython_iot`and run:
+```
+python3 -m micropython_iot.examples.s_app_cp
+```
+On each client edit the file `/pyboard/micropython_iot/examples/local.py` to
+ensure that each has a unique ID in range 1-4. Run
 ```
 from micropython_iot.examples import c_app
+```
+
+#### The remote control demo
+
+This shows one ESP8266 controlling another. The transmitter should have a
+pushbutton between GPIO 0 and gnd.
+
+On the server navigate to the parent directory of `micropython_iot` and run:
+```
+python3 -m micropython_iot.example_remote_control.s_comms_cp
+```
+
+On the esp8266 run (on transmitter and receiver respectively):
+
+```
 from micropython_iot.example_remote_control import c_comms_tx
 from micropython_iot.example_remote_control import c_comms_rx
+```
+
+#### The qos demo
+
+This illustrates a way to ensure guaranteed message delivery. On the server
+navigate to the parent directory of `micropyhton_iot`and run:
+```
+python3 -m micropython_iot.qos.s_qos_cp
+```
+On the client, after editing `/pyboard/qos/local.py`, run:
+```
 from micropython_iot.qos import c_qos
 ```
 
+#### Troubleshooting the demos
 
-The server part can be used like this when the current directory contains micropython_iot:
-```
-python3 -m micropython_iot.examples.s_app_cp
-python3 -m micropython_iot.example_remote_control.s_comms_cp
-python3 -m micropython_iot.qos.s_qos_cp
-```
-
-#### Troubleshooting the demo
-
-Startup behaviour:
- 1. Client repeatedly detects failure and re-initialises WiFi. Check server is
- running; also that IP address and port in client's `local.py` are correct.
- 2. Client spews text. Check ESP8266 has a working WiFi configuration.
-
-#### Further demos
-
-The directories [qos](./qos/README.md) and [example_remote_control](./example_remote_control/README.md) contain
-further demos.
+On startup an `OSError` will be thrown if an initial connection to the WiFi and
+to the server cannot be established.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -236,8 +286,8 @@ which awaits it. After the pause the `Client` has connected to the server and
 communication can begin. This is done using `Client.write` and
 `Client.readline` methods.
 
-Every client ha a unique ID (`MY_ID`) stored in `local.py`. The ID comprises a
-newline-terminated string.
+Every client ha a unique ID (`MY_ID`) typically stored in `local.py`. The ID
+comprises a newline-terminated string.
 
 Messages comprise a single line of text; if the line is not terminated with a
 newline ('\n') the client library will append it. Newlines are only allowed as
@@ -332,6 +382,21 @@ is issued, the coroutine will pause until connectivity is (re)established.
 The client only buffers a single incoming message. To avoid message loss ensure
 that there is a coroutine which spends most of its time awaiting incoming data.
 
+#### Initial behaviour
+
+On startup the `Client` assumes that the ESP8266 has WiFi credentials for the
+local network and the WiFi and server are up. An `OSError` will be thrown
+otherwise. This behaviour may be modified, for example to connect with
+credentials if the stored WiFi network is unavailable. To do this the `Cleint`
+should be subclassed and one or both of the following asynchronous bound
+methods overridden:
+
+ 1. `bad_wifi` No args. Awaited if WiFi can't connect in 4 seconds from boot.
+ 2. `bad_server` No args. Awaited if server refuses an initial connection.
+
+Note that, once a server link has been initially established, these methods
+will not be called.
+
 ###### [Contents](./README.md#1-contents)
 
 # 5. Server side applications
@@ -351,7 +416,7 @@ A basic server-side application has this form:
 ```python
 import asyncio
 import json
-from micropython_iot import server_cp as server
+from micropython_iot import server
 import local  # or however you want to configure your project
 
 class App:
@@ -421,8 +486,11 @@ Methods (asynchrounous):
  time exceeds the timeout period. This minimises the risk of buffer overruns in
  the event that an outage occurs.
 
-Method (synchronous):
+Methods (synchronous):
  1. `status` Returns `True` if connectivity is present.
+ 2. `__getitem__` Enables the `Connection` of another client to be retrieved
+ using list element access syntax. Will throw a `KeyError` if the client is
+ unknown (has never connected).
 
 Class Method (synchronous):
  1. `close_all` No args. Closes all sockets: call on exception (e.g. ctrl-c).
@@ -446,10 +514,25 @@ Server module coroutines:
   connection is considered dead.
  2. `client_conn` Arg: `client_id`. Returns the `Connection` instance for the
  specified client when that client first connects.
- 3. `wait_all` Arg: `client_id=None` Behaves as `client_conn` except that it
- pauses until all expected clients have connected. If `None` is passed, the
- assumption is that the current client is already connected. Pauses until all
- other clients are also ready.
+ 3. `wait_all` Args: `client_id=None` `peers=None`. See below.
+
+The `wait_all` coroutine is intended for applications where clients communicate
+with each other. Typical user code cannot proceed until a given set of clients
+have established initial connectivity.
+
+`wait_all`, where a `client_id` is specified, behaves as `client_conn` except
+that it pauses until further clients have also connected. If `client_id=None`
+the  assumption is that the current client is already connected. It waits until
+a given set of clients have connected and returns `None`.
+
+The `peers` argument defines which clients it must await. If `peers=None` the
+coro pauses until all clients specified to `run` are also ready.  
+
+If a set of `client_id` values is passed as the `peers` arg, it pauses until
+all clients in the set have connected.
+
+It is perhaps worth noting that the user application can impose a timeout on
+this by means of `asyncio.wait_for`.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -526,13 +609,11 @@ link a Pyboard to an ESP8266. The latter runs a fixed firmware build needing no
 user code. This extends the resilient link to the Pyboard. It uses the
 [existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c).
 
-![Image](images/block_diagram_pyboard.png)
+![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram_pyboard.png)
 
 Resilient behaviour includes automatic recovery from WiFi and server outages;
 also from ESP8266 crashes.
 
 # 10. Planned enhancements
 
-Implement the library as Python packages. Perform configuration with
-constructor args rather than direct import of `config.py`. (Changes offered by
-Kevin Köck).
+Improve client-side behaviour when problems occur at boot time.
