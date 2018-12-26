@@ -1,7 +1,7 @@
 # client.py Client class for resilient asynchronous IOT communication link.
 
 # Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Copyright (C) Peter Hinch Kevin Köck 2018
 
 import gc
 
@@ -30,7 +30,8 @@ def launch(func, *tup_args):
 
 
 class Client:
-    def __init__(self, loop, my_id, server, port, timeout, connected_cb=None, connected_cb_args=None,
+    def __init__(self, loop, my_id, server, port, timeout,
+                 connected_cb=None, connected_cb_args=None,
                  verbose=False, led=None):
         self.timeout = timeout  # Server timeout
         self.verbose = verbose
@@ -48,7 +49,7 @@ class Client:
         self.lock = asyn.Lock(100)
         self.connects = 0  # Connect count for test purposes/app access
         self._concb = connected_cb
-        self._concbargs = connected_cb_args or ()
+        self._concbargs = () if connected_cb_args is None else connected_cb_args
         self.sock = None
         self.ok = False  # Set after 1st successful read
         gc.collect()
@@ -87,6 +88,16 @@ class Client:
         if isinstance(self.sock, socket.socket):
             self.sock.close()
 
+    # **** For subclassing ****
+
+    async def bad_wifi(self):
+        await asyncio.sleep(0)
+        raise OSError('No initial WiFi connection.')
+
+    async def bad_server(self):
+        await asyncio.sleep(0)
+        raise OSError('No initial server connection.')
+
     # **** API end ****
 
     # Make an attempt to connect to WiFi. May not succeed.
@@ -104,6 +115,13 @@ class Client:
 
     async def _run(self, loop):
         s = self._sta_if
+        for _ in range(4):
+            await asyncio.sleep(1)
+            if s.isconnected():
+                break
+        else:
+            await self.bad_wifi()
+        start = True
         while True:
             while not s.isconnected():  # Try until stable for 2*.timeout
                 await self._connect(s)
@@ -111,12 +129,15 @@ class Client:
             self.sock = socket.socket()
             self.evfail.clear()
             try:
+                # If server is down OSError e.args[0] = 111 ECONNREFUSED
                 self.sock.connect(self.server)
                 self.sock.setblocking(False)
                 await self._send(self.my_id)  # Can throw OSError
             except OSError:
-                pass
+                if start:
+                    await self.bad_server()
             else:
+                start = False
                 # Improved cancellation code contributed by Kevin Köck
                 _reader = self._reader()
                 loop.create_task(_reader)
@@ -124,24 +145,25 @@ class Client:
                 loop.create_task(_writer)
                 _keepalive = self._keepalive()
                 loop.create_task(_keepalive)
-                if self._concb:
-                    # apps might need to know if they lost connection to the server
-                    launch(self._concb, True, *self._concbargs)
+#                if self._concb is not None:
+                    # apps might need to know connection to the server acquired
+#                    launch(self._concb, True, *self._concbargs)
                 await self.evfail  # Pause until something goes wrong
                 self.ok = False
                 asyncio.cancel(_reader)
                 asyncio.cancel(_writer)
                 asyncio.cancel(_keepalive)
-                if self._concb:
+                if self._concb is not None:
                     # apps might need to know if they lost connection to the server
                     launch(self._concb, False, *self._concbargs)
                 await asyncio.sleep(1)  # wait for cancellation
-                self.close()  # Close sockets
+            finally:
                 self.verbose and print('Fail detected.')
+                self.close()  # Close socket
                 s.disconnect()
                 await asyncio.sleep(1)
-            while s.isconnected():
-                await asyncio.sleep(1)
+                while s.isconnected():
+                    await asyncio.sleep(1)
 
     async def _reader(self):  # Entry point is after a (re) connect.
         c = self.connects  # Count successful connects

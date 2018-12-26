@@ -173,7 +173,21 @@ If a daily build is used it will be necessary to
 #### Dependency
 
 Ensure that `uasyncio` is installed or frozen as bytecode. Either the official
-or the `fast_io` version may be used.
+or the `fast_io` version may be used. Note that the current release build
+includes `uasyncio` so no intsllation is required.
+
+#### Preconditions
+
+Ensure the ESP8266 has a stored WiFi connection.
+
+The file `local.py` on the client contains configuration data such as the
+server port and IP address. It also contains a client ID which must be unique
+to every client which is concurrently connected to the server.
+
+On the server each demo directory contains a file `local.py` which may need to
+be adapted, for example if a different port is to be used. Note that the
+examples below specify `python3`. In every case `micropython` may be
+substituted to run under the Unix build of MicroPython.
 
 #### File copy
 
@@ -194,22 +208,6 @@ rsync micropython_iot /pyboard/micropython_iot -v -m
 ```
 Now you have successfully synchronized the repository onto your device.
 
-The other way is to freeze it into the firmware by copying the repository to the
-micropython/ports/esp8266/modules directory and compiling the build.
-
-#### Preconditions
-
-Ensure the device has a stored WiFi connection.
-
-The file `local.py` on the client contains configuration data such as the
-server port and IP address. It also contains a client ID which must be unique
-to every client which is concurrently connected to the server.
-
-On the server each demo directory contains a file `local.py` which may need to
-be adapted, for example if a different port is to be used. Note that the
-examples below specify `python3`. In every case `micropython` may be
-substituted to run under the Unix build of MicroPython.
-
 ## 3.2 Usage
 
 #### The main demo
@@ -217,12 +215,12 @@ substituted to run under the Unix build of MicroPython.
 This illustrates up to four clients communicating with the server. The demo
 expects the clients to have ID's in the range 1 to 4.
 
-On the server navigate to the parent directory of `micropyhton_iot`and run:
+On the server navigate to the parent directory of `micropython_iot`and run:
 ```
 python3 -m micropython_iot.examples.s_app_cp
 ```
-On each client edit the file `/pyboard/examples/local.py` to ensure that each
-has a unique ID in range 1-4. Run
+On each client edit the file `/pyboard/micropython_iot/examples/local.py` to
+ensure that each has a unique ID in range 1-4. Run
 ```
 from micropython_iot.examples import c_app
 ```
@@ -230,11 +228,9 @@ from micropython_iot.examples import c_app
 #### The remote control demo
 
 This shows one ESP8266 controlling another. The transmitter should have a
-pushbutton between GPIO 0 and gnd. The file
-`/pyboard/example_remote_control/local.py` on each device should be edited so
-that the transmitting device has the ID `tx` and the receiving device `rx`.
+pushbutton between GPIO 0 and gnd.
 
-On the server navigate to the parent directory of `micropyhton_iot` and run:
+On the server navigate to the parent directory of `micropython_iot` and run:
 ```
 python3 -m micropython_iot.example_remote_control.s_comms_cp
 ```
@@ -280,8 +276,8 @@ which awaits it. After the pause the `Client` has connected to the server and
 communication can begin. This is done using `Client.write` and
 `Client.readline` methods.
 
-Every client ha a unique ID (`MY_ID`) stored in `local.py`. The ID comprises a
-newline-terminated string.
+Every client ha a unique ID (`MY_ID`) typically stored in `local.py`. The ID
+comprises a newline-terminated string.
 
 Messages comprise a single line of text; if the line is not terminated with a
 newline ('\n') the client library will append it. Newlines are only allowed as
@@ -375,6 +371,21 @@ is issued, the coroutine will pause until connectivity is (re)established.
 
 The client only buffers a single incoming message. To avoid message loss ensure
 that there is a coroutine which spends most of its time awaiting incoming data.
+
+#### Initial behaviour
+
+On startup the `Client` assumes that the ESP8266 has WiFi credentials for the
+local network and the WiFi and server are up. An `OSError` will be thrown
+otherwise. This behaviour may be modified, for example to connect with
+credentials if the stored WiFi network is unavailable. To do this the `Cleint`
+should be subclassed and one or both of the following asynchronous bound
+methods overridden:
+
+ 1. `bad_wifi` No args. Awaited if WiFi can't connect in 4 seconds from boot.
+ 2. `bad_server` No args. Awaited if server refuses an initial connection.
+
+Note that, once a server link has been initially established, these methods
+will not be called.
 
 ###### [Contents](./README.md#1-contents)
 

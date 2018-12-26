@@ -76,7 +76,7 @@ async def run(loop, expected, verbose=False, port=8123, timeout=1500):
     TO_SECS = timeout / 1000  # ms to seconds
     TIM_SHORT = TO_SECS / 10  # Delay << timeout
     TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
-    verbose and print('Awaiting connection.')
+    verbose and print('Awaiting connection.', port)
     poller = select.poll()
     poller.register(s_sock, select.POLLIN)
     while True:
