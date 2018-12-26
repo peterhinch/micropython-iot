@@ -137,7 +137,6 @@ class Client:
                 if initialising:
                     await self.bad_server()
             else:
-                initialising = False
                 # Improved cancellation code contributed by Kevin Köck
                 _reader = self._reader()
                 loop.create_task(_reader)
@@ -158,6 +157,7 @@ class Client:
                     launch(self._concb, False, *self._concbargs)
                 await asyncio.sleep(1)  # wait for cancellation
             finally:
+                initialising = False
                 self.verbose and print('Fail detected.')
                 self.close()  # Close socket
                 s.disconnect()
