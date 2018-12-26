@@ -156,25 +156,24 @@ constants must be common to all clients and the server:
 
 ## 3.1 Installation
 
-This section describes the installation of the library and all demos on an
+This section describes the installation of the library and the demos on an
 ESP8266 client.
 
-#### Firmware
+#### Firmware/Dependency
 
 It is recommended to use the latest release build of firmware as such builds
 incorporate `uasyncio` as frozen bytecode. Daily builds do not. Alternatively
 to maximise free RAM, firmware can be built from source, freezing `uasyncio`,
-`client.py` and `primitives.py` as bytecode.
+`client.py` and `primitives.py` as bytecode. **TODO** How to freeze the latter two?
+
+Note that if `uasyncio` is to be installed it should be acquired from 
+[official micropython-lib](https://github.com/micropython/micropython-lib). It
+should not be installed from PyPi using `upip`: the version on PyPi is
+incompatible with official firmware.
 
 If a daily build is used it will be necessary to
 [cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
 `client.py`
-
-#### Dependency
-
-Ensure that `uasyncio` is installed or frozen as bytecode. Either the official
-or the `fast_io` version may be used. Note that the current release build
-includes `uasyncio` so no intsllation is required.
 
 #### Preconditions
 
@@ -184,29 +183,48 @@ The file `local.py` on the client contains configuration data such as the
 server port and IP address. It also contains a client ID which must be unique
 to every client which is concurrently connected to the server.
 
-On the server each demo directory contains a file `local.py` which may need to
-be adapted, for example if a different port is to be used. Note that the
-examples below specify `python3`. In every case `micropython` may be
-substituted to run under the Unix build of MicroPython.
+Each demo directory contains a file `local.py` which will need to be adapted,
+to match the local server IP address and possibly to change the default port.
+
+Note that the server-side examples below specify `python3` in the run command.
+In every case `micropython` may be substituted to run under the Unix build of
+MicroPython.
 
 #### File copy
 
-To get the files onto your ESP8266 do NOT copy single files as this repository is
-built to be used as a python package. This means that you have to retain the file
-structure for it to work.
+This repository is built to be used as a python package. This means that on the
+ESP8266 the directory structure must be retained.
+
 The easiest way is to clone the repository:
 ```
 git clone https://github.com/peterhinch/micropython-iot micropython_iot
 ```
 It's important to clone it into a directory *micropyhton_iot* as python does
-not like packages that have a "-" character in their name. 
-Then you need [rshell](https://github.com/dhylands/rshell) and follow these commands:
+not like packages that have a "-" character in their name.
+
+On the ESP8266 a directory `/pyboard/micropython_iot` should be created and the
+following files copied to it:
+ 1. `client.py`
+ 2. `primitives.py`
+ 3. `__init__.py`
+
+To install the demos the following directories and their contents should be
+copied to `/pyboard/micropython_iot`:
+ 1. `qos`
+ 2. `examples`
+ 3. `example_remote_control`
+
+This can be done using any tool but I recommend
+[rshell](https://github.com/dhylands/rshell). If this is used follow these
+commands:
 ```
 rshell -p /dev/ttyS3  # adapt the port to your situation
 mkdir /pyboard/micropython_iot   # create directory on your esp8266  
-rsync micropython_iot /pyboard/micropython_iot -v -m
+cp primitives.py client.py __init__.py /pyboard/micropython_iot/
+cp -r examples /pyboard/micropython_iot/
+cp -r qos /pyboard/micropython_iot/
+cp -r example_remote_control /pyboard/micropython_iot/
 ```
-Now you have successfully synchronized the repository onto your device.
 
 ## 3.2 Usage
 
@@ -256,16 +274,8 @@ from micropython_iot.qos import c_qos
 
 #### Troubleshooting the demos
 
-Startup behaviour:
- 1. Client repeatedly detects failure and re-initialises WiFi. Check server is
- running; also that IP address and port in client's `local.py` are correct.
- 2. Client spews text. Check ESP8266 has a working WiFi configuration.
-
-#### Further demos
-
-The directories [qos](./qos/README.md) and
-[example_remote_control](./example_remote_control/README.md) contain further
-demos.
+On startup an `OSError` will be thrown if an initial connection to the WiFi and
+to the server cannot be established.
 
 ###### [Contents](./README.md#1-contents)
 

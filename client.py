@@ -1,7 +1,7 @@
 # client.py Client class for resilient asynchronous IOT communication link.
 
 # Released under the MIT licence.
-# Copyright (C) Peter Hinch Kevin Köck 2018
+# Copyright (C) Peter Hinch, Kevin Köck 2018
 
 import gc
 
@@ -121,7 +121,7 @@ class Client:
                 break
         else:
             await self.bad_wifi()
-        start = True
+        initialising = True
         while True:
             while not s.isconnected():  # Try until stable for 2*.timeout
                 await self._connect(s)
@@ -134,10 +134,10 @@ class Client:
                 self.sock.setblocking(False)
                 await self._send(self.my_id)  # Can throw OSError
             except OSError:
-                if start:
+                if initialising:
                     await self.bad_server()
             else:
-                start = False
+                initialising = False
                 # Improved cancellation code contributed by Kevin Köck
                 _reader = self._reader()
                 loop.create_task(_reader)
@@ -145,9 +145,9 @@ class Client:
                 loop.create_task(_writer)
                 _keepalive = self._keepalive()
                 loop.create_task(_keepalive)
-#                if self._concb is not None:
+                if self._concb is not None:
                     # apps might need to know connection to the server acquired
-#                    launch(self._concb, True, *self._concbargs)
+                    launch(self._concb, True, *self._concbargs)
                 await self.evfail  # Pause until something goes wrong
                 self.ok = False
                 asyncio.cancel(_reader)
