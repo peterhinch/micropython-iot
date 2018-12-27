@@ -73,7 +73,7 @@ import micropython_iot.pb_link.pb_client
 
 One option is to install the precompiled build. **TODO forthcoming**
 
-Alternatively create a directory `/sd/micropython_iot`. Copy the following
+Alternatively create a directory `/pyboard/micropython_iot`. Copy the following
 files to this directory:
  1. `__init__.py`
  2. `primitives.py`
@@ -81,7 +81,7 @@ files to this directory:
 
 Copy the directory `esp_link` with its contents to `/pyboard/micropython_iot`.
 
-Edit `/sd/main.py` to read:
+Edit `/pyboard/main.py` to read:
 ```python
 _
 ```
@@ -150,7 +150,7 @@ called which the user class should implement.
 
 Typically this will launch user coroutines and terminate, as in the demo.
 
-The `AppBase` class has `.readline` and `.write` coroutines whic comprise the
+The `AppBase` class has `.readline` and `.write` coroutines which comprise the
 interface to the ESP8266 (and thence to the server). User coros communicate
 thus:
 
@@ -186,7 +186,7 @@ Constructor args:
  1. `loop` The asyncio event loop.
  2. `conn_id` Connection ID. See below.
  3. `config` List retrieved from `config.py` as described above.
- 4. `hardware` List retrieved from `config.py` defining the hardare interface.
+ 4. `hardware` List retrieved from `config.py` defining the hardware interface.
  5. `verbose` Provide debug output.
 
 Coroutines:
@@ -207,7 +207,7 @@ application, ensuring that the Pyboard app communicates with its matching
 server app. ID's must be newline-terminated and must not include other newlines.
 
 Subclasses must define a synchronous `start` bound method. This takes no args.
-Typically it lunches user coroutines.
+Typically it launches user coroutines.
 
 # 5. ESP8266 crash detection
 

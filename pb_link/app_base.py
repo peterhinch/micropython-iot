@@ -11,6 +11,7 @@ import ujson
 from . import asi2c_i
 from micropython_iot import primitives  # Stripped down asyn.py
 
+
 class AppBase:
     def __init__(self, loop, conn_id, config, hardware, verbose):
         self.loop = loop
@@ -27,7 +28,7 @@ class AppBase:
 
     # Runs after sync acquired on 1st or subsequent ESP8266 boots.
     async def _go(self):
-        self.verbose and print('Sync aquired, sending config')
+        self.verbose and print('Sync acquired, sending config')
         # On 1st pass user coros haven't started so don't need lock. On
         # subsequent passes (crash recovery) lock was acquired by ._fail()
         await self.swriter.awrite(self.cfg)  # 1st message is config

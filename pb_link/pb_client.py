@@ -15,11 +15,12 @@ from . import config as cfg
 # internal newline.
 CONN_ID = '1\n'
 
+
 # User application: must be class subclassed from AppBase
 class App(app_base.AppBase):
     def __init__(self, loop, conn_id, config, hardware, verbose):
         super().__init__(loop, conn_id, config, hardware, verbose)
-        
+
     def start(self):  # Apps must implement a synchronous start method
         self.loop.create_task(self.receiver())
         self.loop.create_task(self.sender())
