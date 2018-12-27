@@ -21,7 +21,7 @@ else:
     import json
 
 from micropython_iot import server
-from .local import PORT, TIMEOUT
+from .local_tx import PORT, TIMEOUT
 
 
 class App:

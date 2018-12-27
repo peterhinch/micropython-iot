@@ -14,8 +14,10 @@ reliability is therefore paramount. Security is also a factor for endpoints
 exposed to the internet.
 
 Under MicroPython the available hardware for endpoints is limited. At the time
-of writing (December 2018) the Pyboard D is not yet available. The ESP32 is
-incapable of 24/7 operation owing to [this issue](https://github.com/micropython/micropython-esp32/issues/167).
+of writing (December 2018) the Pyboard D is not yet available. The ESP32 had
+a fatal flaw which has [recently been fixed](https://github.com/micropython/micropython/issues/4269).
+I haven't yet had the time to establish its level of general resilience.
+
 The ESP8266 remains as a readily available inexpensive device which, with care,
 is capable of long term reliable operation. It does suffer from limited
 resources, in particular RAM. Achieving resilient operation in the face of WiFi
@@ -263,7 +265,7 @@ from micropython_iot.example_remote_control import c_comms_rx
 #### The qos demo
 
 This illustrates a way to ensure guaranteed message delivery. On the server
-navigate to the parent directory of `micropyhton_iot`and run:
+navigate to the parent directory of `micropython_iot`and run:
 ```
 python3 -m micropython_iot.qos.s_qos_cp
 ```
@@ -614,6 +616,8 @@ user code. This extends the resilient link to the Pyboard. It uses the
 Resilient behaviour includes automatic recovery from WiFi and server outages;
 also from ESP8266 crashes.
 
+See [documentation](./pb_link/README.md).
+
 # 10. Planned enhancements
 
-Improve client-side behaviour when problems occur at boot time.
+Fix Pyboard link qos issue. Further testing of Pyboard link.
