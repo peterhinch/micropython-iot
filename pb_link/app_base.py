@@ -58,7 +58,7 @@ class AppBase:
     async def reboot(self):
         if self.chan.reset is None:  # No config for reset
             raise OSError("Can't reset ESP8266.")
-        self._fail()
+        await self._fail()
         await self.chan.reboot()  # Hardware reset board
 
     def close(self):
