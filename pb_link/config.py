@@ -17,7 +17,7 @@
 # ESP8266 already "knows".
 # 6. QOS (0 or 1)
 
-config = [8123, '192.168.0.41', 1500, 10, 'SSID', 'PASSWORD', 1]
+config = [8123, '192.168.0.41', 1500, 10, 'misspiggy', '6163VMiqSTyx', 1]
 
 try:
     from pyb import I2C  # Only pyb supports slave mode

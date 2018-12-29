@@ -15,6 +15,39 @@ from machine import Pin, I2C
 import ujson
 from . import asi2c
 
+class LinkClient(client.Client):
+    def __init__(self, loop, config, verbose):
+        super().__init__(loop, config[0], config[2], config[1], config[3], verbose=verbose)
+        self.config = config
+
+    # Initial connection to stored network failed. Try to connect using config
+    async def bad_wifi(self):
+        self.verbose and print('bad_wifi started')
+        config = self.config
+        sta_if = self._sta_if
+        ssid = config[5]  # SSID
+        # Either ESP does not 'know' this WLAN or it needs time to connect.
+        if ssid == '':  # No SSID supplied: can only keep trying
+            self.verbose and print('Connecting to ESP8266 stored network...')
+            ssid = 'stored network'
+        else:
+            # Try to connect to specified WLAN. ESP will save details for
+            # subsequent connections.
+            self.verbose and print('Connecting to specified network...')
+            sta_if.connect(ssid, config[6])
+        self.verbose and print('Awaiting WiFi.')
+        for _ in range(20):
+            await asyncio.sleep(1)
+            if sta_if.isconnected():
+                return
+
+        err = "Can't connect to {}".format(ssid)
+        data = ['error', err]
+        line = ''.join((ujson.dumps(data), '\n'))
+        await self.swriter.awrite(line)
+        # Message to Pyboard and REPL. Crash the board. Pyboard
+        # detects, can reboot and retry, change config, or whatever
+        raise ValueError(err)  # croak...
 
 class App:
     def __init__(self, loop, verbose):
@@ -50,41 +83,8 @@ class App:
 
         self.timeout = config[3]
         self.qos = config[6]
-        # Handle case where ESP8266 has not been initialised to the WLAN
-        sta_if = network.WLAN(network.STA_IF)
-        ap = network.WLAN(network.AP_IF) # access-point interface.
-        ap.active(False)         # deactivate AP interface.
-        if sta_if.isconnected():
-            self.verbose and print('Connected to WiFi.')
-        else:
-            # Either ESP does not 'know' this WLAN or it needs time to connect.
-            if config[5] == '':  # No SSID supplied: can only keep trying
-                verbose and print('Connecting to ESP8266 stored network...')
-                net = 'stored network'
-            else:
-                # Try to connect to specified WLAN. ESP will save details for
-                # subsequent connections.
-                net = config[5]
-                self.verbose and print('Connecting to specified network...')
-                sta_if.active(True)
-                sta_if.connect(config[5], config[6])
-            self.verbose and print('Awaiting WiFi.')
-            count = 0
-            while not sta_if.isconnected():
-                await asyncio.sleep(1)
-                count += 1
-                if count > 20:
-                    err = "Can't connect to {}".format(net)
-                    data = ['error', err]
-                    line = ''.join((ujson.dumps(data), '\n'))
-                    await self.swriter.awrite(line)
-                    # Message to Pyboard and REPL. Crash the board. Pyboard
-                    # detects, can reboot and retry, change config, or whatever
-                    raise ValueError(err)  # croak...
-
         self.verbose and print('Setting client config', config)
-        self.cl = client.Client(loop, config[0], config[2], config[1], config[3],
-                                verbose=self.verbose)
+        self.cl = LinkClient(loop, config, self.verbose)
         self.verbose and print('App awaiting connection.')
         await self.cl
         loop.create_task(self.to_server())
@@ -96,7 +96,9 @@ class App:
     async def to_server(self):
         self.verbose and print('Started to_server task.')
         while True:
-            line = await self.sreader.readline()
+            l = await self.sreader.readline()
+            line = l[:]  # Why did it take so long for this old fool to spot this bug?
+            self.verbose and print('Got', line, 'to send to server app')
             # If the following pauses fo an outage, the Pyboard may write
             # one more line. Subsequent calls to channel.write pause pending
             # resumption of communication with the server.

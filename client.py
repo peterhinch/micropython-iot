@@ -46,6 +46,7 @@ class Client:
         self.evfail = asyn.Event(100)  # 100ms pause
         self.evread = asyn.Event(100)
         self.evsend = asyn.Event(100)
+        self.wrlock = asyn.Lock(100)
         self.lock = asyn.Lock(100)
         self.connects = 0  # Connect count for test purposes/app access
         self._concb = connected_cb
@@ -72,16 +73,19 @@ class Client:
         return d
 
     async def write(self, buf, pause=True):
-        end = utime.ticks_add(self.timeout, utime.ticks_ms())
-        if not buf.endswith('\n'):
-            buf = ''.join((buf, '\n'))
-        self.evsend.set(buf)  # Cleared after apparently successful tx
-        while self.evsend.is_set():
-            await asyncio.sleep_ms(30)
-        if pause:
-            dt = utime.ticks_diff(end, utime.ticks_ms())
-            if dt > 0:
-                await asyncio.sleep_ms(dt)  # Control tx rate: <= 1 msg per timeout period
+        async with self.wrlock:  # May be >1 user coro launching .write
+            while self.evsend.is_set():  # _writer still busy
+                await asyncio.sleep_ms(30)
+            if not buf.endswith('\n'):
+                buf = ''.join((buf, '\n'))
+            end = utime.ticks_add(self.timeout, utime.ticks_ms())
+            self.evsend.set(buf)  # Cleared after apparently successful tx
+            while self.evsend.is_set():
+                await asyncio.sleep_ms(30)
+            if pause:
+                dt = utime.ticks_diff(end, utime.ticks_ms())
+                if dt > 0:
+                    await asyncio.sleep_ms(dt)  # Control tx rate: <= 1 msg per timeout period
 
     def close(self):
         self.verbose and print('Closing sockets.')
@@ -148,6 +152,7 @@ class Client:
                     # apps might need to know connection to the server acquired
                     launch(self._concb, True, *self._concbargs)
                 await self.evfail  # Pause until something goes wrong
+                self.verbose and print(self.evfail.value())
                 self.ok = False
                 asyncio.cancel(_reader)
                 asyncio.cancel(_writer)
@@ -158,7 +163,6 @@ class Client:
                 await asyncio.sleep(1)  # wait for cancellation
             finally:
                 initialising = False
-                self.verbose and print('Fail detected.')
                 self.close()  # Close socket
                 s.disconnect()
                 await asyncio.sleep(1)
@@ -175,7 +179,7 @@ class Client:
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
-            self.evfail.set()  # ._run cancels other coros
+            self.evfail.set('reader fail')  # ._run cancels other coros
 
     async def _writer(self):
         try:
@@ -186,7 +190,7 @@ class Client:
                 self.verbose and print('Sent data', self.evsend.value())
                 self.evsend.clear()  # Sent unless other end has failed and not yet detected
         except OSError:
-            self.evfail.set()
+            self.evfail.set('writer fail')
 
     async def _keepalive(self):
         tim = self.timeout * 2 // 3  # Ensure  >= 1 keepalives in server t/o
@@ -196,7 +200,7 @@ class Client:
                 async with self.lock:
                     await self._send('\n')
         except OSError:
-            self.evfail.set()
+            self.evfail.set('keepalive fail')
 
     # Read a line from nonblocking socket: reads can return partial data which
     # are joined into a line. Blank lines are keepalive packets which reset
@@ -225,7 +229,7 @@ class Client:
             if utime.ticks_diff(utime.ticks_ms(), start) > self.timeout:
                 raise OSError
 
-    async def _send(self, d):  # Write a line to either socket.
+    async def _send(self, d):  # Write a line to socket.
         start = utime.ticks_ms()
         nts = len(d)  # Bytes to send
         ns = 0  # No. sent
