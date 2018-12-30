@@ -620,4 +620,9 @@ See [documentation](./pb_link/README.md).
 
 # 10. Planned enhancements
 
-Fix Pyboard link qos issue. Further testing of Pyboard link.
+These relate to the Pyboard link only.
+
+Further testing.
+Write build script for pre-built ESP8266 firmware.
+Add methods to API for Pyboard applications: intercept and handle special
+messages from ESP8266.

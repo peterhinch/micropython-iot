@@ -16,10 +16,11 @@ import ujson
 from . import asi2c
 
 class LinkClient(client.Client):
-    def __init__(self, loop, config, server_status, verbose):
+    def __init__(self, loop, config, swriter, server_status, verbose):
         super().__init__(loop, config[0], config[2], config[1], config[3],
                          connected_cb=server_status, verbose=verbose)
         self.config = config
+        self.swriter = swriter
 
     # Initial connection to stored network failed. Try to connect using config
     async def bad_wifi(self):
@@ -49,6 +50,13 @@ class LinkClient(client.Client):
         # Message to Pyboard and REPL. Crash the board. Pyboard
         # detects, can reboot and retry, change config, or whatever
         raise ValueError(err)  # croak...
+
+    async def bad_server(self):
+        err = "Server {} port {} is down.".format(self.config[2], self.config[1])
+        data = ['error', err]
+        line = ''.join((ujson.dumps(data), '\n'))
+        await self.swriter.awrite(line)
+        raise ValueError(err)  # As per bad_wifi: croak...
 
 class App:
     def __init__(self, loop, verbose):
@@ -84,7 +92,7 @@ class App:
         self.timeout = config[3]
         self.qos = config[6]
         self.verbose and print('Setting client config', config)
-        self.cl = LinkClient(loop, config, self.server_status, self.verbose)
+        self.cl = LinkClient(loop, config, self.swriter, self.server_status, self.verbose)
         self.verbose and print('App awaiting connection.')
         await self.cl
         loop.create_task(self.to_server(loop))
@@ -93,34 +101,25 @@ class App:
             loop.create_task(self.report(config[4]))
 
     # qos==1 Repeat tx if outage occurred after initial tx (1st may have been lost)
-    #async def to_s_del(self, line):
-        #await asyncio.sleep_ms(self.timeout)
-        #if not self.cl.status():
-            #await self.cl.write(line)
-            #self.verbose and print('Repeat', line, 'to server app')
+    async def to_s_del(self, line):
+        await asyncio.sleep_ms(self.timeout)
+        if not self.cl.status():
+            await self.cl.write(line)
+            self.verbose and print('Repeat', line, 'to server app')
 
     async def to_server(self, loop):
         self.verbose and print('Started to_server task.')
         while True:
             l = await self.sreader.readline()
-            line = l[:]  # Why did it take so long for this old fool to spot this bug?
-            self.verbose and print('Got', line, 'to send to server app')
+            line = l[:]  # Is this copy necessary?
             # If the following pauses for an outage, the Pyboard may write
             # one more line. Subsequent calls to channel.write pause pending
             # resumption of communication with the server.
             await self.cl.write(line)
-            # https://github.com/peterhinch/micropython-iot/blob/master/qos/README.md
-            # We must await rather than schedule: hold off Pyboard with flow
-            # control during outage
-            if self.qos:
-                await asyncio.sleep_ms(self.timeout)
-                if not self.cl.status():
-                    await self.cl.write(line)
-                    self.verbose and print('Repeat', line, 'to server app')
-
-            #if self.qos:  # qos 0 or 1 supported
-                #loop.create_task(self.to_s_del(line[:]))
             self.verbose and print('Sent', line, 'to server app')
+            # https://github.com/peterhinch/micropython-iot/blob/master/qos/README.md
+            if self.qos:  # qos 0 or 1 supported
+                loop.create_task(self.to_s_del(line[:]))  # Must copy.
 
     async def from_server(self):
         self.verbose and print('Started from_server task.')

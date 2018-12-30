@@ -132,18 +132,22 @@ class Client:
             self.verbose and print('WiFi OK')
             self.sock = socket.socket()
             self.evfail.clear()
+            _reader = self._reader()
             try:
                 # If server is down OSError e.args[0] = 111 ECONNREFUSED
                 self.sock.connect(self.server)
                 self.sock.setblocking(False)
+                # Start reading before server can send: can't send until it
+                # gets ID.
+                loop.create_task(_reader)
+                # It reads ID immediately, but a brief pause is probably wise.
+                await asyncio.sleep_ms(50)
                 await self._send(self.my_id)  # Can throw OSError
             except OSError:
                 if initialising:
                     await self.bad_server()
             else:
                 # Improved cancellation code contributed by Kevin Köck
-                _reader = self._reader()
-                loop.create_task(_reader)
                 _writer = self._writer()
                 loop.create_task(_writer)
                 _keepalive = self._keepalive()
@@ -157,10 +161,11 @@ class Client:
                 asyncio.cancel(_reader)
                 asyncio.cancel(_writer)
                 asyncio.cancel(_keepalive)
+                await asyncio.sleep(1)  # wait for cancellation
                 if self._concb is not None:
                     # apps might need to know if they lost connection to the server
                     launch(self._concb, False, *self._concbargs)
-                await asyncio.sleep(1)  # wait for cancellation
+#                await asyncio.sleep(1)  # wait for cancellation
             finally:
                 initialising = False
                 self.close()  # Close socket
@@ -182,6 +187,11 @@ class Client:
             self.evfail.set('reader fail')  # ._run cancels other coros
 
     async def _writer(self):
+        # Need a delay to let server initiate: it can take 0.1*timeout before
+        # good status is detected so ensure rx is ready
+        await asyncio.sleep_ms(self.timeout // 3)
+        # Preclude any chance of rx timeout. Lock not needed yet,
+        await self._send(b'\n')
         try:
             while True:
                 await self.evsend
@@ -198,7 +208,7 @@ class Client:
             while True:
                 await asyncio.sleep_ms(tim)
                 async with self.lock:
-                    await self._send('\n')
+                    await self._send(b'\n')
         except OSError:
             self.evfail.set('keepalive fail')
 

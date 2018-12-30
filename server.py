@@ -192,6 +192,7 @@ class Connection:
                         l = bytes(buf).decode().split('\n')
                         if len(l) > 1:  # Have at least 1 newline
                             self.lines.extend(l[:-1])
+#                            print(buf, l, self.lines)
                             buf = bytearray(l[-1].encode('utf8'))
                 await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
 
