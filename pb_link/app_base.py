@@ -17,7 +17,9 @@ class AppBase:
         self.loop = loop
         self.verbose = verbose
         self.initial = True
+        self._status = False  # Server status
         self.wlock = primitives.Lock(100)
+        self.rxevt = primitives.Event()  # rx data ready
         config.insert(0, conn_id)
         config.append('cfg')  # Marker defines a config list
         self.cfg = ''.join((ujson.dumps(config), '\n'))
@@ -25,6 +27,7 @@ class AppBase:
         self.chan = asi2c_i.Initiator(i2c, syn, ack, rst, verbose, self._go, (), self._fail)
         self.sreader = asyncio.StreamReader(self.chan)
         self.swriter = asyncio.StreamWriter(self.chan, {})
+        loop.create_task(self._read())
 
     # Runs after sync acquired on 1st or subsequent ESP8266 boots.
     async def _go(self):
@@ -46,6 +49,27 @@ class AppBase:
         await self.wlock.acquire()
         self.verbose and print('_fail locked')
 
+    async def _read(self):
+        loop = self.loop
+        while True:
+            line = await self.sreader.readline()
+            h, p = chr(line[0]), line[1:]  # Header char, payload
+            if h == 'n':  # Normal message
+                self.rxevt.set(p)
+            elif h == 'b':
+                loop.create_task(self.bad_wifi())
+            elif h == 's':
+                loop.create_task(self.bad_server())
+            elif h == 'r':
+                loop.create_task(self.report(ujson.loads(p)))
+            elif h in ('u', 'd'):
+                up = h == 'u'
+                self._status = up
+                loop.create_task(self.server_ok(up))
+            else:
+                raise ValueError('Unknown header:', h)
+
+    # **** API ****
     async def write(self, line):
         if not line.endswith('\n'):
             line = ''.join((line, '\n'))
@@ -53,7 +77,10 @@ class AppBase:
             await self.swriter.awrite(line)
 
     async def readline(self):
-        return await self.sreader.readline()
+        await self.rxevt
+        line = self.rxevt.value()
+        self.rxevt.clear()
+        return line
 
     async def reboot(self):
         if self.chan.reset is None:  # No config for reset
@@ -64,3 +91,24 @@ class AppBase:
     def close(self):
         self.verbose and print('Closing channel.')
         self.chan.close()
+
+    def status(self):  # Server status
+        return self._status
+
+    # **** For subclassing ****
+
+    async def bad_wifi(self):
+        await asyncio.sleep(0)
+        raise OSError('No initial WiFi connection.')
+
+    async def bad_server(self):
+        await asyncio.sleep(0)
+        raise OSError('No initial server connection.')
+
+    async def report(self, data):
+        await asyncio.sleep(0)
+        print('Connects {} Count {} Mem free {}'.format(data[0], data[1], data[2]))
+
+    async def server_ok(self, up):
+        await asyncio.sleep(0)
+        print('Server is {}'.format('up' if up else 'down'))

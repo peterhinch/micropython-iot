@@ -83,7 +83,7 @@ Copy the directory `esp_link` with its contents to `/pyboard/micropython_iot`.
 
 Edit `/pyboard/main.py` to read:
 ```python
-_
+from micropython_iot.pb_link import pb_client
 ```
 
 ### Dependency

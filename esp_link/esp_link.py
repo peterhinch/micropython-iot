@@ -11,9 +11,11 @@ import network
 gc.collect()
 
 from . import asi2c
+gc.collect()
 from machine import Pin, I2C
 from micropython_iot import client
 import ujson
+gc.collect()
 
 class LinkClient(client.Client):
     def __init__(self, loop, config, swriter, server_status, verbose):
@@ -43,21 +45,15 @@ class LinkClient(client.Client):
             if sta_if.isconnected():
                 return
 
-        err = "Can't connect to {}".format(ssid)
-        data = ['error', err]
-        line = ''.join((ujson.dumps(data), '\n'))
-        await self.swriter.awrite(line)
+        await self.swriter.awrite('b\n')
         # Message to Pyboard and REPL. Crash the board. Pyboard
         # detects, can reboot and retry, change config, or whatever
-        raise ValueError(err)  # croak...
+        raise ValueError("Can't connect to {}".format(ssid))  # croak...
 
     async def bad_server(self):
-        err = "Server {} port {} is down.".format(
-            self.config[2], self.config[1])
-        data = ['error', err]
-        line = ''.join((ujson.dumps(data), '\n'))
-        await self.swriter.awrite(line)
-        raise ValueError(err)  # As per bad_wifi: croak...
+        await self.swriter.awrite('s\n')
+        raise ValueError("Server {} port {} is down.".format(
+            self.config[2], self.config[1]))  # As per bad_wifi: croak...
 
 
 class App:
@@ -70,10 +66,12 @@ class App:
         i2c = I2C(scl=Pin(0), sda=Pin(2))  # software I2C
         syn = Pin(5)
         ack = Pin(4)
+        print('gh')
         self.chan = asi2c.Responder(i2c, syn, ack)  # Channel to Pyboard
         self.sreader = asyncio.StreamReader(self.chan)
         self.swriter = asyncio.StreamWriter(self.chan, {})
         loop.create_task(self.start(loop))
+        print('gh1')
 
     async def start(self, loop):
         await self.chan.ready()  # Wait for sync
@@ -128,25 +126,24 @@ class App:
         self.verbose and print('Started from_server task.')
         while True:
             line = await self.cl.readline()
-            await self.swriter.awrite(line.decode('utf8'))  # Implied copy
+            # Implied copy
+            await self.swriter.awrite(''.join(('n', line.decode('utf8'))))
             self.verbose and print('Sent', line, 'to Pyboard app\n')
 
     async def server_status(self, status):
-        data = ['status', status]
-        line = ''.join((ujson.dumps(data), '\n'))
-        await self.swriter.awrite(line)
+        await self.swriter.awrite('u\n' if status else 'd\n')
 
     async def report(self, time):
-        data = ['report', 0, 0, 0]
+        data = [0, 0, 0]
         count = 0
         while True:
             await asyncio.sleep(time)
-            data[1] = self.cl.connects  # For diagnostics
-            data[2] = count
+            data[0] = self.cl.connects  # For diagnostics
+            data[1] = count
             count += 1
             gc.collect()
-            data[3] = gc.mem_free()
-            line = ''.join((ujson.dumps(data), '\n'))
+            data[2] = gc.mem_free()
+            line = ''.join(('r', ujson.dumps(data), '\n'))
             await self.swriter.awrite(line)
 
     def close(self):
