@@ -9,11 +9,11 @@ import uasyncio as asyncio
 import network
 
 gc.collect()
-import ujson
-from micropython_iot import client
-from machine import Pin, I2C
-import ujson
+
 from . import asi2c
+from machine import Pin, I2C
+from micropython_iot import client
+import ujson
 
 class LinkClient(client.Client):
     def __init__(self, loop, config, swriter, server_status, verbose):
@@ -52,11 +52,13 @@ class LinkClient(client.Client):
         raise ValueError(err)  # croak...
 
     async def bad_server(self):
-        err = "Server {} port {} is down.".format(self.config[2], self.config[1])
+        err = "Server {} port {} is down.".format(
+            self.config[2], self.config[1])
         data = ['error', err]
         line = ''.join((ujson.dumps(data), '\n'))
         await self.swriter.awrite(line)
         raise ValueError(err)  # As per bad_wifi: croak...
+
 
 class App:
     def __init__(self, loop, verbose):
@@ -92,7 +94,8 @@ class App:
         self.timeout = config[3]
         self.qos = config[6]
         self.verbose and print('Setting client config', config)
-        self.cl = LinkClient(loop, config, self.swriter, self.server_status, self.verbose)
+        self.cl = LinkClient(loop, config, self.swriter,
+                             self.server_status, self.verbose)
         self.verbose and print('App awaiting connection.')
         await self.cl
         loop.create_task(self.to_server(loop))

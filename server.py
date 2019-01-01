@@ -32,8 +32,7 @@ else:
 
 
 # Read the node ID. There isn't yet a Connection instance.
-# CPython does not have socket.readline. Further, the socket may return more
-# than one line after an outage. The first line holds the client_id.
+# CPython does not have socket.readline. Return client_id.
 
 # Note re OSError: did detect errno.EWOULDBLOCK. Not supported in MicroPython.
 # In cpython EWOULDBLOCK == EAGAIN == 11.
@@ -46,16 +45,19 @@ async def _readid(s):
         except OSError as e:
             err = e.args[0]
             if err == errno.EAGAIN:
-                pass
+                if (time.time() - start) > TO_SECS:
+                    raise OSError  # Timeout waiting for data
+                else:
+                    # Waiting for data from client. Limit CPU overhead. 
+                    await asyncio.sleep(TIM_TINY)
             else:
                 raise OSError  # Reset by peer 104
         else:
-            if d == '' or (time.time() - start) > TO_SECS:
+            if d == '':
                 raise OSError  # Reset by peer or t/o
             data = ''.join((data, d))
-            if data.find('\n') != -1:  # >= one line
-                return data
-        await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
+            if data.endswith('\n'):
+                return data.strip()
 
 
 # API: application calls server.run()
@@ -85,14 +87,12 @@ async def run(loop, expected, verbose=False, port=8123, timeout=1500):
             c_sock, _ = s_sock.accept()  # get client socket
             c_sock.setblocking(False)
             try:
-                data = await _readid(c_sock)
+                client_id = await _readid(c_sock)
             except OSError:
                 c_sock.close()
             else:
-                client_id, init_str = data.split('\n', 1)
                 verbose and print('Got connection from client', client_id)
-                Connection.go(loop, client_id, init_str, verbose, c_sock,
-                              s_sock, expected)
+                Connection.go(loop, client_id, verbose, c_sock, s_sock, expected)
         await asyncio.sleep(0.2)
 
 
@@ -105,7 +105,7 @@ class Connection:
     _server_sock = None
 
     @classmethod
-    def go(cls, loop, client_id, init_str, verbose, c_sock, s_sock, expected):
+    def go(cls, loop, client_id, verbose, c_sock, s_sock, expected):
         if cls._server_sock is None:  # 1st invocation
             cls._server_sock = s_sock
             cls._expected.update(expected)
@@ -116,7 +116,7 @@ class Connection:
             else:  # Reconnect after failure
                 cls._conns[client_id].sock = c_sock
         else: # New client: instantiate Connection
-            Connection(loop, c_sock, client_id, init_str, verbose)
+            Connection(loop, c_sock, client_id, verbose)
 
     # Server-side app waits for a working connection
     @classmethod
@@ -151,7 +151,7 @@ class Connection:
         if cls._server_sock is not None:
             cls._server_sock.close()
 
-    def __init__(self, loop, c_sock, client_id, init_str, verbose):
+    def __init__(self, loop, c_sock, client_id, verbose):
         self.sock = c_sock  # Socket
         self.client_id = client_id
         self.verbose = verbose
@@ -165,36 +165,38 @@ class Connection:
         self.lock = Lock()
         loop.create_task(self._keepalive())
         self.lines = []
-        loop.create_task(self._read(init_str))
+        loop.create_task(self._read())
 
-    async def _read(self, init_str):
+    async def _read(self):
         while True:
-            # Start (or restart after outage) with data left over from .readid
-            await self._status_coro()
-            buf = bytearray(init_str.encode('utf8'))
+            # Start (or restart after outage). Do this promptly.
+            # Fast version of await self._status_coro()
+            while self.sock is None:
+                await asyncio.sleep(TIM_TINY)
+            buf = bytearray()
             start = time.time()
             while self.status():
                 try:
                     d = self.sock.recv(4096)
                 except OSError as e:
                     err = e.args[0]
-                    if err == errno.EAGAIN:
+                    if err == errno.EAGAIN:  # Would block: try later
                         if time.time() - start > TO_SECS:
-                            self._close()
+                            self._close()  # Unless it timed out.
+                        else:
+                            # Waiting for data from client. Limit CPU overhead.
+                            await asyncio.sleep(TIM_TINY)
                     else:
                         self._close()  # Reset by peer 104
                 else:
                     start = time.time()  # Something was received
                     if d == b'':  # Reset by peer
                         self._close()
-                    elif d is not None:
-                        buf.extend(d)
-                        l = bytes(buf).decode().split('\n')
-                        if len(l) > 1:  # Have at least 1 newline
-                            self.lines.extend(l[:-1])
-#                            print(buf, l, self.lines)
-                            buf = bytearray(l[-1].encode('utf8'))
-                await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
+                    buf.extend(d)
+                    l = bytes(buf).decode().split('\n')
+                    if len(l) > 1:  # Have at least 1 newline
+                        self.lines.extend(l[:-1])
+                        buf = bytearray(l[-1].encode('utf8'))
 
     def status(self):
         return self.sock is not None

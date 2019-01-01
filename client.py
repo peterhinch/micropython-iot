@@ -3,6 +3,9 @@
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch, Kevin Köck 2018
 
+# After sending ID now pauses before sending further data to allow server to
+# initiate read task.
+
 import gc
 
 gc.collect()
@@ -140,7 +143,7 @@ class Client:
                 # Start reading before server can send: can't send until it
                 # gets ID.
                 loop.create_task(_reader)
-                # It reads ID immediately, but a brief pause is probably wise.
+                # Server reads ID immediately, but a brief pause is probably wise.
                 await asyncio.sleep_ms(50)
                 await self._send(self.my_id)  # Can throw OSError
             except OSError:
@@ -148,6 +151,7 @@ class Client:
                     await self.bad_server()
             else:
                 # Improved cancellation code contributed by Kevin Köck
+                # Note _writer and _keepalive pause before 1st tx
                 _writer = self._writer()
                 loop.create_task(_writer)
                 _keepalive = self._keepalive()
