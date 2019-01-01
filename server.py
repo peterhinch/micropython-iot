@@ -38,6 +38,57 @@ else:
 
 # Note re OSError: did detect errno.EWOULDBLOCK. Not supported in MicroPython.
 # In cpython EWOULDBLOCK == EAGAIN == 11.
+async def _read(loop, conns, verbose, sock):
+    while True:
+        # Start (or restart after outage). Do this promptly.
+        # Fast version of await self._status_coro()
+        buf = bytearray()
+        start = time.time()
+        client_id = None
+        client = None
+        while client_id is None or client.status():
+            try:
+                d = sock.recv(4096)
+            except OSError as e:
+                err = e.args[0]
+                if err == errno.EAGAIN:  # Would block: try later
+                    if time.time() - start > TO_SECS:
+                        verbose and print('fail detected')  # Unless it timed out.
+                        sock.close()
+                        return
+                    else:
+                        # Waiting for data from client. Limit CPU overhead.
+                        await asyncio.sleep(TIM_TINY)
+                else:
+                    verbose and print('connection reset by peer')  # Reset by peer 104
+                    sock.close()
+                    return
+            else:
+                start = time.time()  # Something was received
+                if d == b'':  # Reset by peer
+                    verbose and print('connection reset by peer')  # Reset by peer 104
+                    sock.close()
+                    return
+                buf.extend(d)
+                l = bytes(buf).decode().split('\n')
+                if client_id is None:
+                    client_id = l.pop(0)
+                    if client_id in conns:  # Old client, new socket
+                        if conns[client_id].status():
+                            print('Duplicate client {} ignored.'.format(client_id))
+                            sock.close()
+                            return
+                        else:  # Reconnect after failure
+                            conns[client_id].sock = sock
+                            client = conns[client_id]
+                            verbose and print("Client {!s} reconnected".format(client_id))
+                            # assume that the Connection instance does not get removed before the sock does
+                    else:
+                        verbose and print('Got connection from client', client_id)
+                        conns[client_id] = Connection(loop, client_id, sock, verbose)
+                if len(l) > 1:  # Have at least 1 newline
+                    client.lines.extend(l[:-1])
+                    buf = bytearray(l[-1].encode('utf8'))
 
 
 # API: application calls server.run()
@@ -61,12 +112,13 @@ async def run(loop, expected, verbose=False, port=8123, timeout=1500):
     verbose and print('Awaiting connection.', port)
     poller = select.poll()
     poller.register(s_sock, select.POLLIN)
+    _conns = Connection.go(s_sock, expected)
     while True:
         res = poller.poll(1)  # 1ms block
         if len(res):  # Only s_sock is polled
             c_sock, _ = s_sock.accept()  # get client socket
             c_sock.setblocking(False)
-            Connection.go(loop, verbose, c_sock, s_sock, expected)
+            loop.create_task(_read(loop, _conns, verbose, c_sock))
         await asyncio.sleep(0.2)
 
 
@@ -79,11 +131,11 @@ class Connection:
     _server_sock = None
 
     @classmethod
-    def go(cls, loop, verbose, c_sock, s_sock, expected):
+    def go(cls, s_sock, expected):
         if cls._server_sock is None:  # 1st invocation
             cls._server_sock = s_sock
             cls._expected.update(expected)
-        Connection(loop, c_sock, verbose)
+        return cls._conns
 
     # Server-side app waits for a working connection
     @classmethod
@@ -118,68 +170,19 @@ class Connection:
         if cls._server_sock is not None:
             cls._server_sock.close()
 
-    def __init__(self, loop, c_sock, verbose):
+    def __init__(self, loop, client_id, c_sock, verbose):
         self.sock = c_sock  # Socket
-        self.client_id = None
+        self.client_id = client_id
         self.verbose = verbose
+        try:
+            Connection._expected.remove(self.client_id)
+        except KeyError:
+            print('Unknown client {} has connected. Expected {}.'.format(
+                self.client_id, Connection._expected))
         self.lock = Lock()
         loop.create_task(self._keepalive())
         self.lines = []
         loop.create_task(self._read())
-
-    async def _read(self):
-        while True:
-            # Start (or restart after outage). Do this promptly.
-            # Fast version of await self._status_coro()
-            while self.sock is None:
-                await asyncio.sleep(TIM_TINY)
-            buf = bytearray()
-            start = time.time()
-            while self.status():
-                try:
-                    d = self.sock.recv(4096)
-                except OSError as e:
-                    err = e.args[0]
-                    if err == errno.EAGAIN:  # Would block: try later
-                        if time.time() - start > TO_SECS:
-                            self._close()  # Unless it timed out.
-                        else:
-                            # Waiting for data from client. Limit CPU overhead.
-                            await asyncio.sleep(TIM_TINY)
-                    else:
-                        self._close()  # Reset by peer 104
-                else:
-                    start = time.time()  # Something was received
-                    if d == b'':  # Reset by peer
-                        self._close()
-                    buf.extend(d)
-                    l = bytes(buf).decode().split('\n')
-                    if len(l) > 1:  # Have at least 1 newline
-                        self.lines.extend(l[:-1])
-                        buf = bytearray(l[-1].encode('utf8'))
-                    if self.client_id is None:
-                        self.client_id = self.lines.pop(0)
-                        if self.client_id in self._conns:  # Old client, new socket
-                            if self._conns[self.client_id].status():
-                                print('Duplicate client {} ignored.'.format(self.client_id))
-                                self.sock.close()
-                                self.sock = None
-                                return  # should remove the connection class
-                            else:  # Reconnect after failure
-                                self._conns[self.client_id].sock = self.sock
-                                self._conns[self.client_id].lines += self.lines
-                                # only possible data loss is last part of the message in buffer
-                                # that is not newline-terminated
-                                self.sock = None
-                                return  # should remove the connection class
-                        else:
-                            self.verbose and print('Got connection from client', self.client_id)
-                            Connection._conns[self.client_id] = self
-                            try:
-                                Connection._expected.remove(self.client_id)
-                            except KeyError:
-                                print('Unknown client {} has connected. Expected {}.'.format(
-                                    self.client_id, Connection._expected))
 
     def status(self):
         return self.sock is not None
