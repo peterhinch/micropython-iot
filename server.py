@@ -85,7 +85,8 @@ async def _read(loop, conns, verbose, sock):
                             # assume that the Connection instance does not get removed before the sock does
                     else:
                         verbose and print('Got connection from client', client_id)
-                        conns[client_id] = Connection(loop, client_id, sock, verbose)
+                        client = Connection(loop, client_id, sock, verbose)
+                        conns[client_id] = client
                 if len(l) > 1:  # Have at least 1 newline
                     client.lines.extend(l[:-1])
                     buf = bytearray(l[-1].encode('utf8'))
@@ -182,7 +183,6 @@ class Connection:
         self.lock = Lock()
         loop.create_task(self._keepalive())
         self.lines = []
-        loop.create_task(self._read())
 
     def status(self):
         return self.sock is not None
