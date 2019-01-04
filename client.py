@@ -31,15 +31,33 @@ def launch(func, *tup_args):
         loop = asyncio.get_event_loop()
         loop.create_task(res)
 
+def nextmid(mid):
+    mid = (mid + 1) & 0xff
+    return mid if mid else 1
+
+def isnew(mid, lst=bytearray(32)):
+    if mid == -1:
+        for idx in range(32):
+            lst[idx] = 0
+        return
+    idx = mid >> 3
+    bit = 1 << (mid & 7)
+    res = not(lst[idx] & bit)
+    lst[idx] |= bit
+    lst[(idx + 16 & 0x1f)] = 0
+    return res
+
 
 class Client:
     def __init__(self, loop, my_id, server, port, timeout,
                  connected_cb=None, connected_cb_args=None,
-                 verbose=False, led=None):
+                 verbose=False, led=None, qos=0):
+        self.loop = loop
         self.timeout = timeout  # Server timeout
         self.verbose = verbose
         self.led = led
-        self.my_id = my_id
+        self.qos = qos
+        self.my_id = my_id if my_id.endswith("\n") else my_id+"\n"
         self._sta_if = network.WLAN(network.STA_IF)
         self._sta_if.active(True)
         ap = network.WLAN(network.AP_IF)
@@ -56,6 +74,8 @@ class Client:
         self._concbargs = () if connected_cb_args is None else connected_cb_args
         self.sock = None
         self.ok = False  # Set after 1st successful read
+        self._mid = 0  # Message ID
+        self._init = True
         gc.collect()
         loop.create_task(self._run(loop))
 
@@ -75,20 +95,39 @@ class Client:
         self.evread.clear()
         return d
 
+    # qos>0 Repeat tx if outage occurred after initial tx (1st may have been lost)
+    async def repeat(self, line):
+        await asyncio.sleep_ms(self.timeout)
+        if self.ok:
+            return
+
+        async with self.wrlock:
+            while self.evsend.is_set():  # _writer still busy
+                await asyncio.sleep_ms(30)
+            self.evsend.set(line)  # Cleared after apparently successful tx
+            while self.evsend.is_set():
+                await asyncio.sleep_ms(30)
+        self.verbose and print('Repeat', line, 'to server app')
+
     async def write(self, buf, pause=True):
+        # Prepend message ID to a copy of buf
+        fstr =  '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
+        buf = fstr.format(self._mid, buf)
+        self._mid = nextmid(self._mid)
+
         async with self.wrlock:  # May be >1 user coro launching .write
             while self.evsend.is_set():  # _writer still busy
                 await asyncio.sleep_ms(30)
-            if not buf.endswith('\n'):
-                buf = ''.join((buf, '\n'))
             end = utime.ticks_add(self.timeout, utime.ticks_ms())
             self.evsend.set(buf)  # Cleared after apparently successful tx
             while self.evsend.is_set():
                 await asyncio.sleep_ms(30)
-            if pause:
-                dt = utime.ticks_diff(end, utime.ticks_ms())
-                if dt > 0:
-                    await asyncio.sleep_ms(dt)  # Control tx rate: <= 1 msg per timeout period
+        if self.qos:  # Retransmit if link has gone down
+            self.loop.create_task(self.repeat(buf))
+        if pause:
+            dt = utime.ticks_diff(end, utime.ticks_ms())
+            if dt > 0:
+                await asyncio.sleep_ms(dt)  # Control tx rate: <= 1 msg per timeout period
 
     def close(self):
         self.verbose and print('Closing sockets.')
@@ -122,6 +161,7 @@ class Client:
 
     async def _run(self, loop):
         s = self._sta_if
+        s.connect()
         for _ in range(4):
             await asyncio.sleep(1)
             if s.isconnected():
@@ -151,7 +191,7 @@ class Client:
                     await self.bad_server()
             else:
                 # Improved cancellation code contributed by Kevin Köck
-                # Note _writer and _keepalive pause before 1st tx
+                # Note _writer pauses before 1st tx
                 _writer = self._writer()
                 loop.create_task(_writer)
                 _keepalive = self._keepalive()
@@ -183,8 +223,17 @@ class Client:
         self.evread.clear()  # No data read yet
         try:
             while True:
-                r = await self._readline()  # OSError on fail
-                self.evread.set(r)  # Read succeeded: flag .readline
+                line = await self._readline()  # OSError on fail
+                # Discard dupes
+                mid = int(line[0:2], 16)
+                # mid == 0 : client has power cycled
+                if not mid:
+                    isnew(-1)
+                # _init : client has restarted. mid == 0 server power up
+                if self._init or not mid or isnew(mid):
+                    self._init = False
+                    # Read succeeded: flag .readline
+                    self.evread.set(''.join((line[2:].decode(), '\n')))
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
@@ -233,6 +282,7 @@ class Client:
                     self.led(not self.led())
             d = self.sock.readline()
             if d == b'':
+#                print('readline sock fail')
                 raise OSError
             if d is None:  # Nothing received: wait on server
                 await asyncio.sleep_ms(100)
@@ -241,6 +291,7 @@ class Client:
             else:
                 line = b''.join((line, d))
             if utime.ticks_diff(utime.ticks_ms(), start) > self.timeout:
+#                print('readline timeout')
                 raise OSError
 
     async def _send(self, d):  # Write a line to socket.

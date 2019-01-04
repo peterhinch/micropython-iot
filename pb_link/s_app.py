@@ -64,7 +64,7 @@ def run():
     clients = {'1', '2', '3', '4'}
     apps = [App(loop, str(n)) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, clients, False, cfg[0], cfg[2]))
+        loop.run_until_complete(server.run(loop, clients, True, cfg[0], cfg[2]))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

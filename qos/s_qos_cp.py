@@ -49,7 +49,7 @@ class App:
                 self.dupes_ignored += 1
                 continue
             else:  # Message ID is new
-                if self.rx_msg_id != data[0] - 1:
+                if self.rx_msg_id != data[0] - 1 and data[0] > 1:
                     self.msg_missed += 1
                 self.rx_msg_id = data[0]
             print('Got {} from remote {}'.format(data, self.client_id))

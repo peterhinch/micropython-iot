@@ -359,6 +359,7 @@ Constructor args:
  9. `led=None` If a `Pin` instance is passed it will be toggled each time a
  keepalive message is received. Can provide a heartbeat LED if connectivity is
  present.
+ 10. `qos=0` Quality of service: see [section 7](./README.md#7-quality-of-service).
 
 Methods (asynchrounous):
  1. `readline` No args. Pauses until data received. Returns a line.
@@ -486,7 +487,8 @@ Methods (asynchrounous):
  2. `write` Args: `buf`, `pause=True`. `buf` holds a line of text. If `pause`
  is set the method will pause after writing to ensure that the total elapsed
  time exceeds the timeout period. This minimises the risk of buffer overruns in
- the event that an outage occurs.
+ the event that an outage occurs. Does not preclude launching a further `write`
+ coro if messages need to be sent in quick succession.
 
 Methods (synchronous):
  1. `status` Returns `True` if connectivity is present.
@@ -567,14 +569,23 @@ overflow.
 
 # 7. Quality of service
 
-In MQTT parlance the link operates at qos==0: there is no guarantee of packet
-delivery. Normally when an outage occurs transmission is delayed until
-connectivity resumes. Packet loss will occur if, at the time when a message is
-sent, an outage has occurred but has not yet been detected by the sender.
+In MQTT parlance transmission from the client to the server operates at qos==0:
+there is no guarantee of packet delivery. Normally when an outage occurs
+transmission is delayed until connectivity resumes. Packet loss will occur if,
+at the time when a message is sent, an outage has occurred but has not yet been
+detected by the sender.
 
-In practice it is easy to achieve qos==2 in application code; in this case
-message delivery is guaranteed and messages will be processed once only. This
-is dicussed [here](./qos/README.md).
+This may be remedied by setting the `qos=0` client contructor arg to 1 or 2. A
+nonzero value guarantees that the message will be delivered exactly once. There
+is a small chance of messages being delivered out of order in the case where a
+number of messages are sent in the interval between an outage occurring and
+being detected.
+
+Messages from server to client are delivered exactly once and in correct order
+regardless of `qos` setting.
+
+While delivery may be guaranteed, timeliness is not. Messages are inevitably
+delayed for the duration of an outage.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -583,10 +594,13 @@ is dicussed [here](./qos/README.md).
 ## 8.1 Latency and throughput
 
 The interface is intended to provide low latency: if a switch on one node
-controls a pin on another, a quick response can be expected. The link is not
-designed for high throughput because of the buffer overflow issue discussed in
-[section 6](./README.md#6-ensuring-resilence). This is essentially a limitation
-of the ESP8266 device.
+controls a pin on another, a reasonably quick response can be expected. The
+link is not designed for high throughput because of the buffer overflow issue
+discussed in [section 6](./README.md#6-ensuring-resilence). This is essentially
+a limitation of the ESP8266 device.
+
+In practice latency on the order of 100-200ms is normal; latency will of course
+last for the duration if an outage occurs.
 
 **TIMEOUT**
 

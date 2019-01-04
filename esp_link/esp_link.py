@@ -13,6 +13,10 @@ gc.collect()
 from . import asi2c
 gc.collect()
 from machine import Pin, I2C
+
+import sys
+sys.path.append(sys.path.pop(0))  # ******* TEMPORARY *******
+
 from micropython_iot import client
 import ujson
 gc.collect()
@@ -20,7 +24,7 @@ gc.collect()
 class LinkClient(client.Client):
     def __init__(self, loop, config, swriter, server_status, verbose):
         super().__init__(loop, config[0], config[2], config[1], config[3],
-                         connected_cb=server_status, verbose=verbose)
+                         connected_cb=server_status, verbose=verbose, qos=config[6])
         self.config = config
         self.swriter = swriter
 
@@ -60,18 +64,14 @@ class App:
     def __init__(self, loop, verbose):
         self.verbose = verbose
         self.cl = None  # Client instance for server comms.
-        self.timeout = 0  # Set by config
-        self.qos = 0
         # Instantiate a Pyboard Channel
         i2c = I2C(scl=Pin(0), sda=Pin(2))  # software I2C
         syn = Pin(5)
         ack = Pin(4)
-        print('gh')
         self.chan = asi2c.Responder(i2c, syn, ack)  # Channel to Pyboard
         self.sreader = asyncio.StreamReader(self.chan)
         self.swriter = asyncio.StreamWriter(self.chan, {})
         loop.create_task(self.start(loop))
-        print('gh1')
 
     async def start(self, loop):
         await self.chan.ready()  # Wait for sync
@@ -89,8 +89,6 @@ class App:
                 else:
                     self.verbose and print('Got bad config', line)
 
-        self.timeout = config[3]
-        self.qos = config[6]
         self.verbose and print('Setting client config', config)
         self.cl = LinkClient(loop, config, self.swriter,
                              self.server_status, self.verbose)
@@ -101,26 +99,16 @@ class App:
         if config[4]:
             loop.create_task(self.report(config[4]))
 
-    # qos==1 Repeat tx if outage occurred after initial tx (1st may have been lost)
-    async def to_s_del(self, line):
-        await asyncio.sleep_ms(self.timeout)
-        if not self.cl.status():
-            await self.cl.write(line)
-            self.verbose and print('Repeat', line, 'to server app')
-
     async def to_server(self, loop):
         self.verbose and print('Started to_server task.')
         while True:
-            l = await self.sreader.readline()
-            line = l[:]  # Is this copy necessary?
+            line = await self.sreader.readline()
+#            line = l[:]  # Implied copy at start of write()
             # If the following pauses for an outage, the Pyboard may write
             # one more line. Subsequent calls to channel.write pause pending
             # resumption of communication with the server.
             await self.cl.write(line)
             self.verbose and print('Sent', line, 'to server app')
-            # https://github.com/peterhinch/micropython-iot/blob/master/qos/README.md
-            if self.qos:  # qos 0 or 1 supported
-                loop.create_task(self.to_s_del(line[:]))  # Must copy.
 
     async def from_server(self):
         self.verbose and print('Started from_server task.')
