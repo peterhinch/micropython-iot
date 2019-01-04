@@ -39,7 +39,7 @@ class Client:
         self.timeout = timeout  # Server timeout
         self.verbose = verbose
         self.led = led
-        self.my_id = my_id
+        self.my_id = my_id if my_id.endswith("\n") else my_id+"\n"
         self._sta_if = network.WLAN(network.STA_IF)
         self._sta_if.active(True)
         ap = network.WLAN(network.AP_IF)
