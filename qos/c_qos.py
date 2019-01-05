@@ -22,7 +22,7 @@ class App:
         self.tx_msg_id = 1
         self.rx_msg_id = None  # Incoming ID
         self.dupes_ignored = 0  # Incoming dupe count
-        self.msg_missed = 0
+        self.rxbuf = []
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
@@ -42,10 +42,19 @@ class App:
                 self.dupes_ignored += 1
                 continue
             else:  # Message ID is new
-                if self.rx_msg_id != data[0] - 1:
-                    self.msg_missed += 1
+                self.rxbuf.append(data[0])
                 self.rx_msg_id = data[0]
             print('Got', data, 'from server app')
+
+    def count_missed(self):
+        self.rxbuf.sort()
+        rxbuf = self.rxbuf
+        if len(rxbuf) < 10:
+            return 0
+        missed = 0
+        for idx in range(1, len(rxbuf) -5):
+            missed += rxbuf[idx] - rxbuf[idx - 1] - 1
+        return missed
 
     # Send [ID, (re)connect count, free RAM, duplicate message count, missed msgcount]
     async def writer(self):
@@ -53,14 +62,11 @@ class App:
         while True:
             gc.collect()
             data = [self.tx_msg_id, self.cl.connects, gc.mem_free(),
-                    self.dupes_ignored, self.msg_missed]
+                    self.dupes_ignored, self.count_missed()]
             self.tx_msg_id += 1
             print('Sent', data, 'to server app\n')
             dstr = ujson.dumps(data)
             await self.cl.write(dstr)
-            await asyncio.sleep_ms(self.timeout)  # time for outage detection
-            if not self.cl.status():  # Meassage may have been lost
-                await self.cl.write(dstr)  # Re-send: will wait until outage clears
             await asyncio.sleep(5)
 
     def close(self):

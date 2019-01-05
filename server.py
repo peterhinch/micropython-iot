@@ -30,10 +30,15 @@ else:
     import errno
     Lock = asyncio.Lock
 
-def nextmid(mid):  # Next expected message ID
-    mid = (mid + 1) & 0xff
-    return mid if mid else 1  # ID 0 only after client power up.
+# Create message ID's. Initially 0 then 1 2 ... 254 255 1 2
+def gmid():
+    mid = 0
+    while True:
+        yield mid
+        mid = (mid + 1) & 0xff
+        mid = mid if mid else 1
 
+# Return True if a message ID has not already been received
 def isnew(mid, lst=bytearray(32)):
     if mid == -1:
         for idx in range(32):
@@ -132,7 +137,6 @@ class Connection:
                 print('Duplicate client {} ignored.'.format(client_id))
                 c_sock.close()
             else:  # Reconnect after failure
-                loop.create_task(cls._conns[client_id]._reconn(c_sock))
                 cls._conns[client_id].sock = c_sock
         else: # New client: instantiate Connection
             Connection(loop, c_sock, client_id, init_str, verbose)
@@ -171,6 +175,7 @@ class Connection:
             cls._server_sock.close()
 
     def __init__(self, loop, c_sock, client_id, init_str, verbose):
+        self.loop = loop
         self.sock = c_sock  # Socket
         self.client_id = client_id
         self.verbose = verbose
@@ -182,8 +187,7 @@ class Connection:
                 client_id, Connection._expected))
 
         self._init = True
-        self._mid = 0  # Message ID
-        self._lastwr = None  # Last message written
+        self.getmid = gmid()  # Generator for message ID's
         self.lock = Lock()
         loop.create_task(self._keepalive())
         self.lines = []
@@ -219,19 +223,6 @@ class Connection:
                     if len(l) > 1:  # Have at least 1 newline
                         self.lines.extend(l[:-1])
                         buf = bytearray(l[-1].encode('utf8'))
-
-    # Connection has reconnected after a server or WiFi outage
-    async def _reconn(self, sock):
-        try:
-            # Grab lock before any other task to rewrite last message which may
-            # have been lost.
-            async with self.lock:  #  Other tasks are waiting on status
-                self.sock = sock
-                await asyncio.sleep(0.2)  # Give client time?
-                await self._send(self._lastwr)  # OSError on fail
-        except OSError:
-            self.verbose and print('Write client disconnected: closing connection.')
-            self._close()
 
     def status(self):
         return self.sock is not None
@@ -276,50 +267,61 @@ class Connection:
     async def _keepalive(self):
         to = TO_SECS * 2 / 3
         while True:
-            await self.write('\n')
+            await self._vwrite('\n')
             await asyncio.sleep(to)
 
-    async def write(self, buf, pause=True):
-        if not buf.startswith('\n'):
-            fstr =  '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
-            buf = fstr.format(self._mid, buf)
-            self._lastwr = buf
-            self._mid = nextmid(self._mid)
-            end = time.time() + TO_SECS
+    # qos>0 Repeat tx if outage occurred after initial tx (1st may have been lost)
+    async def _do_qos(self, buf):
+        await asyncio.sleep(TO_SECS)
+        if self.status():
+            return
+        await self._vwrite(buf)
+        self.verbose and print('Repeat', buf, 'to server app')
 
-        while True:
-            if self.verbose and not self.status():
-                print('Writer Client:', self.client_id, 'awaiting OK status')
-            await self._status_coro()
-            self.verbose and print('Writer Client:', self.client_id, 'OK')
-            try:
-                async with self.lock:  # >1 writing task?
-                    await self._send(buf)  # OSError on fail
-                break
-            except OSError:
-                self.verbose and print('Write client disconnected: closing connection.')
-                self._close()
-        if pause and not buf.startswith('\n'):  # Throttle rate of non-keepalive messages
+    async def write(self, line, pause=True):
+        fstr =  '{:02x}{}' if line.endswith('\n') else '{:02x}{}\n'
+        buf = fstr.format(next(self.getmid), line)  # Local copy
+        end = time.time() + TO_SECS
+        await self._vwrite(buf)
+        # Ensure qos by conditionally repeating the message
+        self.loop.create_task(self._do_qos(buf))
+        if pause:  # Throttle rate of non-keepalive messages
             dt = end - time.time()
             if dt > 0:
                 await asyncio.sleep(dt)  # Control tx rate: <= 1 msg per timeout period
 
+    async def _vwrite(self, buf):  # Verbatim write: add no message ID
+        ok = False
+        while not ok:
+            if self.verbose and not self.status():
+                print('Writer Client:', self.client_id, 'awaiting OK status')
+            await self._status_coro()
+#            self.verbose and print('Writer Client:', self.client_id, 'OK')
+            async with self.lock:  # >1 writing task?
+                ok = await self._send(buf)  # Fail clears status
+
+    # Send a string as bytes. Return True on apparent success, False on failure.
     async def _send(self, d):
         if not self.status():
-            raise OSError
+            return False
         d = d.encode('utf8')
         start = time.time()
         while len(d):
             try:
                 ns = self.sock.send(d)  # Raise OSError if client fails
             except OSError:
-                raise
+                break
             else:
                 d = d[ns:]
                 if len(d):
                     await asyncio.sleep(TIM_SHORT)
                     if (time.time() - start) > TO_SECS:
-                        raise OSError
+                        break
+        else:
+            return True  # Success
+        self.verbose and print('Write fail: closing connection.')
+        self._close()
+        return False
 
     def __getitem__(self, client_id):  # Return a Connection of another client
         return Connection._conns[client_id]
@@ -327,9 +329,8 @@ class Connection:
     def _close(self):
         if self.sock is not None:
             self.verbose and print('fail detected')
-            if self.sock is not None:
-                self.sock.close()
-                self.sock = None
+            self.sock.close()
+            self.sock = None
 
 # API aliases
 client_conn = Connection.client_conn

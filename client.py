@@ -31,9 +31,16 @@ def launch(func, *tup_args):
         loop = asyncio.get_event_loop()
         loop.create_task(res)
 
-def nextmid(mid):
-    mid = (mid + 1) & 0xff
-    return mid if mid else 1
+# Create message ID's. Initially 0 then 1 2 ... 254 255 1 2
+def gmid():
+    mid = 0
+    while True:
+        yield mid
+        mid = (mid + 1) & 0xff
+        mid = mid if mid else 1
+
+getmid = gmid()
+
 
 def isnew(mid, lst=bytearray(32)):
     if mid == -1:
@@ -74,7 +81,6 @@ class Client:
         self._concbargs = () if connected_cb_args is None else connected_cb_args
         self.sock = None
         self.ok = False  # Set after 1st successful read
-        self._mid = 0  # Message ID
         self._init = True
         gc.collect()
         loop.create_task(self._run(loop))
@@ -112,8 +118,7 @@ class Client:
     async def write(self, buf, pause=True):
         # Prepend message ID to a copy of buf
         fstr =  '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
-        buf = fstr.format(self._mid, buf)
-        self._mid = nextmid(self._mid)
+        buf = fstr.format(next(getmid), buf)
 
         async with self.wrlock:  # May be >1 user coro launching .write
             while self.evsend.is_set():  # _writer still busy
@@ -149,7 +154,7 @@ class Client:
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
         self.verbose and print('Connecting to WiFi')
-        s.connect()  # ESP8266 remembers connection.
+        s.connect()
         # Break out on fail or success.
         while s.status() == network.STAT_CONNECTING:
             await asyncio.sleep(1)
@@ -160,6 +165,8 @@ class Client:
             await asyncio.sleep(1)
 
     async def _run(self, loop):
+        # ESP8266 stores last good connection. Initially give it time to re-establish
+        # that link. On fail, .bad_wifi() allows for user recovery.
         s = self._sta_if
         s.connect()
         for _ in range(4):
@@ -168,7 +175,7 @@ class Client:
                 break
         else:
             await self.bad_wifi()
-        initialising = True
+        init = True
         while True:
             while not s.isconnected():  # Try until stable for 2*.timeout
                 await self._connect(s)
@@ -187,7 +194,7 @@ class Client:
                 await asyncio.sleep_ms(50)
                 await self._send(self.my_id)  # Can throw OSError
             except OSError:
-                if initialising:
+                if init:
                     await self.bad_server()
             else:
                 # Improved cancellation code contributed by Kevin Köck
@@ -211,7 +218,7 @@ class Client:
                     launch(self._concb, False, *self._concbargs)
 #                await asyncio.sleep(1)  # wait for cancellation
             finally:
-                initialising = False
+                init = False
                 self.close()  # Close socket
                 s.disconnect()
                 await asyncio.sleep(1)
@@ -226,9 +233,9 @@ class Client:
                 line = await self._readline()  # OSError on fail
                 # Discard dupes
                 mid = int(line[0:2], 16)
-                # mid == 0 : client has power cycled
+                # mid == 0 : Server has power cycled
                 if not mid:
-                    isnew(-1)
+                    isnew(-1)  # Clear down rx message record
                 # _init : client has restarted. mid == 0 server power up
                 if self._init or not mid or isnew(mid):
                     self._init = False
@@ -282,7 +289,6 @@ class Client:
                     self.led(not self.led())
             d = self.sock.readline()
             if d == b'':
-#                print('readline sock fail')
                 raise OSError
             if d is None:  # Nothing received: wait on server
                 await asyncio.sleep_ms(100)
@@ -291,7 +297,7 @@ class Client:
             else:
                 line = b''.join((line, d))
             if utime.ticks_diff(utime.ticks_ms(), start) > self.timeout:
-#                print('readline timeout')
+                print('DEBUG readline timeout')
                 raise OSError
 
     async def _send(self, d):  # Write a line to socket.

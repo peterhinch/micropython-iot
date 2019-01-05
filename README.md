@@ -144,7 +144,8 @@ incoming connection.
     4.3. `local.py` Example of local config file.
  5. `examples_remote_control` Package of a specific example of using the library
  to remote control another esp8266, see [README](./example_remote_control/README.md)
- 6. `qos` Package of an example qos implementation, see [README](./qos/README.md)
+ 6. `qos` Package of an example qos implementation, see
+ [Quality of service](./README.md#7-quality-of-service).
 
 `local.py` should be edited to ensure each client has a unique ID. Other
 constants must be common to all clients and the server:
@@ -264,8 +265,8 @@ from micropython_iot.example_remote_control import c_comms_rx
 
 #### The qos demo
 
-This illustrates a way to ensure guaranteed message delivery. On the server
-navigate to the parent directory of `micropython_iot`and run:
+This tests guaranteed message delivery. On the server navigate to the parent
+directory of `micropython_iot`and run:
 ```
 python3 -m micropython_iot.qos.s_qos_cp
 ```
@@ -581,11 +582,13 @@ is a small chance of messages being delivered out of order in the case where a
 number of messages are sent in the interval between an outage occurring and
 being detected.
 
-Messages from server to client are delivered exactly once and in correct order
-regardless of `qos` setting.
+Messages from server to client are delivered with qos > 0 regardless of the
+client's `qos` setting.
 
 While delivery may be guaranteed, timeliness is not. Messages are inevitably
 delayed for the duration of an outage.
+
+The way in which qos is achieved is discussed [here](./qos/README.md).
 
 ###### [Contents](./README.md#1-contents)
 

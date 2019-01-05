@@ -29,7 +29,7 @@ class App:
         self.tx_msg_id = 1
         self.rx_msg_id = None  # Incoming ID
         self.dupes_ignored = 0  # Incoming dupe count
-        self.msg_missed = 0
+        self.rxbuf = []
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
@@ -37,6 +37,16 @@ class App:
         self.conn = await server.client_conn(self.client_id)
         loop.create_task(self.reader())
         loop.create_task(self.writer())
+
+    def count_missed(self):
+        self.rxbuf.sort()
+        rxbuf = self.rxbuf
+        if len(rxbuf) < 10:
+            return 0
+        missed = 0
+        for idx in range(1, len(rxbuf) -5):
+            missed += rxbuf[idx] - rxbuf[idx - 1] - 1
+        return missed
 
     async def reader(self):
         print('Started reader')
@@ -49,16 +59,14 @@ class App:
                 self.dupes_ignored += 1
                 continue
             else:  # Message ID is new
-                if self.rx_msg_id != data[0] - 1 and data[0] > 1:
-                    self.msg_missed += 1
+                self.rxbuf.append(data[0])
                 self.rx_msg_id = data[0]
             print('Got {} from remote {}'.format(data, self.client_id))
             print('Dupes ignored {} local {} remote.'.format(self.dupes_ignored, data[3]))
-            print('Missed msg {} local {} remote.'.format(self.msg_missed, data[4]))
+            print('Missed msg {} local {} remote.'.format(self.count_missed(), data[4]))
 
     # Send [ID, message count since last outage]
     async def writer(self):
-        tout = TIMEOUT / 1000
         print('Started writer')
         count = 0
         while True:
@@ -66,19 +74,15 @@ class App:
             self.tx_msg_id += 1
             count += 1
             print('Sent {} to remote {}\n'.format(data, self.client_id))
-            dstr = json.dumps(data)
-            await self.conn.write(dstr)
-            await asyncio.sleep(tout)  # time for outage detection
-            if not self.conn.status():  # Meassage may have been lost
-                await self.conn.write(dstr)  # Re-send: will wait until outage clears
-            await asyncio.sleep(5 - tout)
+            await self.conn.write(json.dumps(data))
+            await asyncio.sleep(5)
 
 
 def run():
     loop = asyncio.get_event_loop()
     app = App(loop, 'qos')
     try:
-        loop.run_until_complete(server.run(loop, {'qos'}, False, PORT, TIMEOUT))
+        loop.run_until_complete(server.run(loop, {'qos'}, True, PORT, TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
