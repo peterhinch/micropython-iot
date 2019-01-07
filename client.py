@@ -207,7 +207,8 @@ class Client:
                 if self._init or not mid or isnew(mid):
                     self._init = False
                     # Read succeeded: flag .readline
-                    self.evread.set(''.join((line[2:].decode(), '\n')))
+                    self.evread.set(line[2:].decode())
+                    #self.evread.set(''.join((line[2:].decode(), '\n')))  line has \n
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
@@ -264,7 +265,6 @@ class Client:
             else:
                 line = b''.join((line, d))
             if utime.ticks_diff(utime.ticks_ms(), start) > self.timeout:
-                print('DEBUG readline timeout')
                 raise OSError
 
     async def _send(self, d):  # Write a line to socket.

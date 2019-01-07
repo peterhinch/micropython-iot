@@ -87,7 +87,7 @@ socket, but one which persists through outages.
  1. [Contents](./README.md#1-contents)  
  2. [Design](./README.md#2-design)  
   2.1 [Protocol](./README.md#21-protocol)  
- 3. [Files](./README.md#3-files)  
+ 3. [Files and packages](./README.md#3-files-and-packages)  
   3.1 [Installation](./README.md#31-installation)  
   3.2 [Usage](./README.md#32-usage)
  4. [Client side applications](./README.md#4-client-side-applications)  
@@ -133,19 +133,19 @@ incoming connection.
 
 ###### [Contents](./README.md#1-contents)
 
-# 3. Files
+# 3. Files and packages
 
- 1. `client.py` Client module for ESP8266.
- 2. `primitives.py` Stripped down version of `asyn.py`.
+ 1. `client.py` / `client.mpy` Client module for ESP8266.
+ 2. `__init__.py` Functions and classes common to many modules.
  3. `server.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.4+)
  4. `examples` Package of a general example for client and server usage
-    4.1. `c_app.py` Demo client-side application.
-    4.2. `s_app_cp.py` Demo server-side application.
-    4.3. `local.py` Example of local config file.
- 5. `examples_remote_control` Package of a specific example of using the library
- to remote control another esp8266, see [README](./example_remote_control/README.md)
- 6. `qos` Package of an example qos implementation, see
+ 5. `examples_remote_control` Package demonstrating using the library to enable
+ one ESP8266 to control another.
+ 6. `qos` Package of an example qos (qality of service) implementation, see
  [Quality of service](./README.md#7-quality-of-service).
+ 7. `pb_link` Package enabling a Pyboard V1.x to commuicate with the server via
+ an ESP8266 connected by I2C. See [documentation](./pb_link/README.md).
+ 8. `esp_link` Package for the ESP8266 used in the Pyboard link.
 
 `local.py` should be edited to ensure each client has a unique ID. Other
 constants must be common to all clients and the server:
@@ -167,7 +167,7 @@ ESP8266 client.
 It is recommended to use the latest release build of firmware as such builds
 incorporate `uasyncio` as frozen bytecode. Daily builds do not. Alternatively
 to maximise free RAM, firmware can be built from source, freezing `uasyncio`,
-`client.py` and `primitives.py` as bytecode. **TODO** How to freeze the latter two?
+`client.py` and `__init__.py` as bytecode.
 
 Note that if `uasyncio` is to be installed it should be acquired from 
 [official micropython-lib](https://github.com/micropython/micropython-lib). It
@@ -207,9 +207,10 @@ not like packages that have a "-" character in their name.
 
 On the ESP8266 a directory `/pyboard/micropython_iot` should be created and the
 following files copied to it:
- 1. `client.py`
- 2. `primitives.py`
- 3. `__init__.py`
+ 1. `client.mpy`
+ 2. `__init__.py`
+Note that the ESP8266 has insufficient RAM to compile `client.py` so the cross
+compiled `client.mpy` must be used.
 
 To install the demos the following directories and their contents should be
 copied to `/pyboard/micropython_iot`:
@@ -223,7 +224,7 @@ commands:
 ```
 rshell -p /dev/ttyS3  # adapt the port to your situation
 mkdir /pyboard/micropython_iot   # create directory on your esp8266  
-cp primitives.py client.py __init__.py /pyboard/micropython_iot/
+cp client.py __init__.py /pyboard/micropython_iot/
 cp -r examples /pyboard/micropython_iot/
 cp -r qos /pyboard/micropython_iot/
 cp -r example_remote_control /pyboard/micropython_iot/
@@ -240,6 +241,10 @@ On the server navigate to the parent directory of `micropython_iot`and run:
 ```
 python3 -m micropython_iot.examples.s_app_cp
 ```
+or
+```
+micropython -m micropython_iot.examples.s_app_cp
+```
 On each client edit the file `/pyboard/micropython_iot/examples/local.py` to
 ensure that each has a unique ID in range 1-4. Run
 ```
@@ -255,6 +260,10 @@ On the server navigate to the parent directory of `micropython_iot` and run:
 ```
 python3 -m micropython_iot.example_remote_control.s_comms_cp
 ```
+or
+```
+micropython -m micropython_iot.example_remote_control.s_comms_cp
+```
 
 On the esp8266 run (on transmitter and receiver respectively):
 
@@ -269,6 +278,10 @@ This tests guaranteed message delivery. On the server navigate to the parent
 directory of `micropython_iot`and run:
 ```
 python3 -m micropython_iot.qos.s_qos_cp
+```
+or
+```
+micropython -m micropython_iot.qos.s_qos_cp
 ```
 On the client, after editing `/pyboard/qos/local.py`, run:
 ```
@@ -614,10 +627,9 @@ however I have not tested values <1.5s.
 
 ## 8.2 Client RAM utilisation
 
-With a daily build and no use of frozen bytecode the demo reports 9.1KB free.
-With a release build this increases to 15KB because `uasyncio` is included as
-frozen bytecode. Free RAM of 23.8KB was achieved with compiled firmware with
-`client.py`, `primitives.py` and `uasyncio` frozen as bytecode.
+With a release build the demo reports nearly 11KB free. Free RAM of 21.8KB was
+achieved with compiled firmware with `client.py`, `__init__.py` and `uasyncio`
+frozen as bytecode.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -641,5 +653,3 @@ These relate to the Pyboard link only.
 
 Further testing.
 Write build script for pre-built ESP8266 firmware.
-Add methods to API for Pyboard applications: intercept and handle special
-messages from ESP8266.

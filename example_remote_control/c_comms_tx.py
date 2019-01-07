@@ -8,14 +8,17 @@
 
 import gc
 import uasyncio as asyncio
+gc.collect()
+from micropython_iot import client, Event
 
 gc.collect()
 import ujson
 from machine import Pin
+gc.collect()
 
 from . import local_tx as local
 from . import aswitch
-from micropython_iot import client, Event
+gc.collect()
 
 
 class App:

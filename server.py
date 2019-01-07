@@ -249,7 +249,8 @@ class Connection:
             self._close()
 
     async def _keepalive(self):
-        to = TO_SECS * 2 / 3
+#        to = TO_SECS * 2 / 3
+        to = TO_SECS / 2
         while True:
             await self._vwrite('\n')
             await asyncio.sleep(to)

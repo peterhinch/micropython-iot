@@ -5,13 +5,14 @@
 
 import gc
 import uasyncio as asyncio
-
+gc.collect()
+from micropython_iot import client
 gc.collect()
 import ujson
 from machine import Pin
 
 from . import local
-from micropython_iot import client
+gc.collect()
 
 
 class App:

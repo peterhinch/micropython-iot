@@ -60,7 +60,6 @@ flash, substitute `flash` for `sd` below.
 On the Pyboard create a directory `/sd/micropython_iot`. Copy the following
 files to this directory:
  1. `__init__.py`
- 2. `primitives.py`
 
 Copy the directory `pb_link.py` to `/sd/micropython_iot`.
 
@@ -76,8 +75,7 @@ One option is to install the precompiled build. **TODO forthcoming**
 Alternatively create a directory `/pyboard/micropython_iot`. Copy the following
 files to this directory:
  1. `__init__.py`
- 2. `primitives.py`
- 3. `client.py`
+ 2. `client.mpy`
 
 Copy the directory `esp_link` with its contents to `/pyboard/micropython_iot`.
 

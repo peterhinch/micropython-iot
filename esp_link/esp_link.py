@@ -103,7 +103,8 @@ class App:
         self.verbose and print('Started to_server task.')
         while True:
             line = await self.sreader.readline()
-#            line = l[:]  # Implied copy at start of write()
+            line = line.decode()
+            # Implied copy at start of write()
             # If the following pauses for an outage, the Pyboard may write
             # one more line. Subsequent calls to channel.write pause pending
             # resumption of communication with the server.
@@ -114,9 +115,12 @@ class App:
         self.verbose and print('Started from_server task.')
         while True:
             line = await self.cl.readline()
-            # Implied copy
-            await self.swriter.awrite(''.join(('n', line.decode('utf8'))))
-            self.verbose and print('Sent', line, 'to Pyboard app\n')
+            if line.startswith('\n'):
+                print('bad start')
+            else:
+                # Implied copy
+                await self.swriter.awrite(''.join(('n', line)))
+                self.verbose and print('Sent', line.encode('utf8'), 'to Pyboard app\n')
 
     async def server_status(self, status):
         await self.swriter.awrite('u\n' if status else 'd\n')
