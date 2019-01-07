@@ -10,6 +10,7 @@ gc.collect()
 import ujson
 from machine import Pin
 from . import local
+gc.collect()
 from micropython_iot import client
 
 
@@ -18,11 +19,12 @@ class App:
         self.verbose = verbose
         self.timeout = timeout
         led = Pin(2, Pin.OUT, value=1)  # Optional LED
-        self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, led)
-        self.tx_msg_id = 1
-        self.rx_msg_id = None  # Incoming ID
-        self.dupes_ignored = 0  # Incoming dupe count
-        self.msg_missed = 0
+        self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, led, 2)
+        self.tx_msg_id = 0
+        self.dupes = 0  # Incoming dupe count
+        self.missing = 0
+        self.last = 0
+        self.rxbuf = []
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
@@ -36,16 +38,22 @@ class App:
         while True:
             line = await self.cl.readline()
             data = ujson.loads(line)
-            if self.rx_msg_id is None:
-                self.rx_msg_id = data[0]  # Just started
-            elif self.rx_msg_id == data[0]:  # We've had a duplicate
-                self.dupes_ignored += 1
-                continue
-            else:  # Message ID is new
-                if self.rx_msg_id != data[0] - 1:
-                    self.msg_missed += 1
-                self.rx_msg_id = data[0]
+            rxmid = data[0]
+            if rxmid in self.rxbuf:
+                self.dupes += 1
+            else:
+                self.rxbuf.append(rxmid)
             print('Got', data, 'from server app')
+
+    def count_missed(self):
+        if len(self.rxbuf) >= 25:
+            idx = 0
+            while self.rxbuf[idx] < self.last + 10:
+                idx += 1
+            self.last += 10
+            self.missing += 10 - idx
+            self.rxbuf = self.rxbuf[idx:]
+        return self.missing
 
     # Send [ID, (re)connect count, free RAM, duplicate message count, missed msgcount]
     async def writer(self):
@@ -53,14 +61,11 @@ class App:
         while True:
             gc.collect()
             data = [self.tx_msg_id, self.cl.connects, gc.mem_free(),
-                    self.dupes_ignored, self.msg_missed]
+                    self.dupes, self.count_missed()]
             self.tx_msg_id += 1
             print('Sent', data, 'to server app\n')
             dstr = ujson.dumps(data)
             await self.cl.write(dstr)
-            await asyncio.sleep_ms(self.timeout)  # time for outage detection
-            if not self.cl.status():  # Meassage may have been lost
-                await self.cl.write(dstr)  # Re-send: will wait until outage clears
             await asyncio.sleep(5)
 
     def close(self):

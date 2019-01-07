@@ -1,7 +1,7 @@
 # server_cp.py Server for IOT communications.
 
 # Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Copyright (C) Peter Hinch 2019
 
 # Maintains bidirectional full-duplex links between server applications and
 # multiple WiFi connected clients. Each application instance connects to its
@@ -12,6 +12,7 @@
 
 # Run under CPython 3.5+ or MicroPython Unix build
 import sys
+from . import gmid, isnew  # __init__.py
 
 upython = sys.implementation.name == 'micropython'
 if upython:
@@ -20,8 +21,7 @@ if upython:
     import utime as time
     import uselect as select
     import uerrno as errno
-    from . import primitives
-    Lock = primitives.Lock
+    from . import Lock
 else:
     import socket
     import asyncio
@@ -29,7 +29,6 @@ else:
     import select
     import errno
     Lock = asyncio.Lock
-
 
 # Read the node ID. There isn't yet a Connection instance.
 # CPython does not have socket.readline. Return 1st string received
@@ -117,7 +116,7 @@ class Connection:
                 print('Duplicate client {} ignored.'.format(client_id))
                 c_sock.close()
             else:  # Reconnect after failure
-                cls._conns[client_id].sock = c_sock
+                cls._conns[client_id].reconnect(c_sock)
         else: # New client: instantiate Connection
             Connection(loop, c_sock, client_id, init_str, verbose)
 
@@ -155,6 +154,7 @@ class Connection:
             cls._server_sock.close()
 
     def __init__(self, loop, c_sock, client_id, init_str, verbose):
+        self.loop = loop
         self.sock = c_sock  # Socket
         self.client_id = client_id
         self.verbose = verbose
@@ -165,10 +165,17 @@ class Connection:
             print('Unknown client {} has connected. Expected {}.'.format(
                 client_id, Connection._expected))
 
+        self._init = True  # Server power-up
+        self._wr_pause = True  # Initial or subsequent client connection
+        self.getmid = gmid()  # Generator for message ID's
         self.lock = Lock()
         loop.create_task(self._keepalive())
         self.lines = []
         loop.create_task(self._read(init_str))
+
+    def reconnect(self, c_sock):
+        self.sock = c_sock
+        self._wr_pause = True
 
     async def _read(self, init_str):
         while True:
@@ -227,7 +234,16 @@ class Connection:
                 if len(self.lines):
                     line = self.lines.pop(0)
                     if len(line):  # Ignore keepalives
-                        return line + '\n'
+                        # Discard dupes: get message ID
+                        mid = int(line[0:2], 16)
+                        # mid == 0 : client has power cycled
+                        if not mid:
+                            isnew(-1)
+                        # _init : server has powered up
+                        if self._init or not mid or isnew(mid):
+                            self._init = False
+                            return ''.join((line[2:], '\n'))
+
                 await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
             self.verbose and print('Read client disconnected: closing connection.')
             self._close()
@@ -235,48 +251,65 @@ class Connection:
     async def _keepalive(self):
         to = TO_SECS * 2 / 3
         while True:
-            await self.write('\n')
+            await self._vwrite('\n')
             await asyncio.sleep(to)
 
-    async def write(self, buf, pause=True):
-        if not buf.startswith('\n'):
-            end = time.time() + TO_SECS
-            if not buf.endswith('\n'):
-                buf = ''.join((buf, '\n'))
-        while True:
-            if self.verbose and not self.status():
-                print('Writer Client:', self.client_id, 'awaiting OK status')
-            await self._status_coro()
-            self.verbose and print('Writer Client:', self.client_id, 'OK')
-            try:
-                async with self.lock:  # >1 writing task?
-                    await self._send(buf)  # OSError on fail
-                break
-            except OSError:
-                self.verbose and print('Write client disconnected: closing connection.')
-                self._close()
-        if pause and not buf.startswith('\n'):  # Throttle rate of non-keepalive messages
-            # Kevin Köck: does not have any effect if multiple coroutines try to write
+    # qos>0 Repeat tx if outage occurred after initial tx (1st may have been lost)
+    async def _do_qos(self, buf):
+        await asyncio.sleep(TO_SECS)
+        if self.status():
+            return
+        await self._vwrite(buf)
+        self.verbose and print('Repeat', buf, 'to server app')
+
+    async def write(self, line, pause=True):
+        fstr =  '{:02x}{}' if line.endswith('\n') else '{:02x}{}\n'
+        buf = fstr.format(next(self.getmid), line)  # Local copy
+        end = time.time() + TO_SECS
+        await self._vwrite(buf)
+        # Ensure qos by conditionally repeating the message
+        self.loop.create_task(self._do_qos(buf))
+        if pause:  # Throttle rate of non-keepalive messages
             dt = end - time.time()
             if dt > 0:
                 await asyncio.sleep(dt)  # Control tx rate: <= 1 msg per timeout period
 
+    async def _vwrite(self, buf):  # Verbatim write: add no message ID
+        ok = False
+        while not ok:
+            if self.verbose and not self.status():
+                print('Writer Client:', self.client_id, 'awaiting OK status')
+            await self._status_coro()
+            if self._wr_pause:  # Initial or subsequent connection
+                self._wr_pause = False
+                await asyncio.sleep(0.2)  # TEST give client time
+
+#            self.verbose and print('Writer Client:', self.client_id, 'OK')
+            async with self.lock:  # >1 writing task?
+                ok = await self._send(buf)  # Fail clears status
+
+    # Send a string as bytes. Return True on apparent success, False on failure.
     async def _send(self, d):
         if not self.status():
-            raise OSError
+            return False
         d = d.encode('utf8')
         start = time.time()
         while len(d):
             try:
                 ns = self.sock.send(d)  # Raise OSError if client fails
             except OSError:
-                raise
+                break
             else:
                 d = d[ns:]
                 if len(d):
                     await asyncio.sleep(TIM_SHORT)
                     if (time.time() - start) > TO_SECS:
-                        raise OSError
+                        break
+        else:
+            return True  # Success
+        self.verbose and print('Write fail: closing connection.')
+        self._close()
+        return False
 
     def __getitem__(self, client_id):  # Return a Connection of another client
         return Connection._conns[client_id]
@@ -284,9 +317,8 @@ class Connection:
     def _close(self):
         if self.sock is not None:
             self.verbose and print('fail detected')
-            if self.sock is not None:
-                self.sock.close()
-                self.sock = None
+            self.sock.close()
+            self.sock = None
 
 # API aliases
 client_conn = Connection.client_conn
