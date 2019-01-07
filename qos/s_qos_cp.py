@@ -26,10 +26,11 @@ class App:
     def __init__(self, loop, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
-        self.tx_msg_id = 1
-        self.rx_msg_id = None  # Incoming ID
-        self.dupes_ignored = 0  # Incoming dupe count
+        self.tx_msg_id = 0
+        self.dupes = 0  # Incoming dupe count
         self.rxbuf = []
+        self.missing = 0
+        self.last = 0
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
@@ -39,30 +40,27 @@ class App:
         loop.create_task(self.writer())
 
     def count_missed(self):
-        self.rxbuf.sort()
-        rxbuf = self.rxbuf
-        if len(rxbuf) < 10:
-            return 0
-        missed = 0
-        for idx in range(1, len(rxbuf) -5):
-            missed += rxbuf[idx] - rxbuf[idx - 1] - 1
-        return missed
+        if len(self.rxbuf) >= 25:
+            idx = 0
+            while self.rxbuf[idx] < self.last + 10:
+                idx += 1
+            self.last += 10
+            self.missing += 10 - idx
+            self.rxbuf = self.rxbuf[idx:]
+        return self.missing
 
     async def reader(self):
         print('Started reader')
         while True:
             line = await self.conn.readline()  # Pause in event of outage
             data = json.loads(line)
-            if self.rx_msg_id is None:
-                self.rx_msg_id = data[0]  # Just started
-            elif self.rx_msg_id == data[0]:  # We've had a duplicate
-                self.dupes_ignored += 1
-                continue
-            else:  # Message ID is new
-                self.rxbuf.append(data[0])
-                self.rx_msg_id = data[0]
+            rxmid = data[0]
+            if rxmid in self.rxbuf:
+                self.dupes += 1
+            else:
+                self.rxbuf.append(rxmid)
             print('Got {} from remote {}'.format(data, self.client_id))
-            print('Dupes ignored {} local {} remote.'.format(self.dupes_ignored, data[3]))
+            print('Dupes ignored {} local {} remote. '.format(self.dupes, data[3]), end='')
             print('Missed msg {} local {} remote.'.format(self.count_missed(), data[4]))
 
     # Send [ID, message count since last outage]

@@ -11,48 +11,15 @@ import gc
 gc.collect()
 import usocket as socket
 import uasyncio as asyncio
-
-from . import primitives as asyn  # Stripped down version of asyn.py
+gc.collect()
 
 import network
 import utime
 
 gc.collect()
-
-type_gen = type((lambda: (yield))())  # Generator type
-
-
-# If a callback is passed, run it and return.
-# If a coro is passed initiate it and return.
-# coros are passed by name i.e. not using function call syntax.
-def launch(func, *tup_args):
-    res = func(*tup_args)
-    if isinstance(res, type_gen):
-        loop = asyncio.get_event_loop()
-        loop.create_task(res)
-
-# Create message ID's. Initially 0 then 1 2 ... 254 255 1 2
-def gmid():
-    mid = 0
-    while True:
-        yield mid
-        mid = (mid + 1) & 0xff
-        mid = mid if mid else 1
-
-getmid = gmid()
-
-
-def isnew(mid, lst=bytearray(32)):
-    if mid == -1:
-        for idx in range(32):
-            lst[idx] = 0
-        return
-    idx = mid >> 3
-    bit = 1 << (mid & 7)
-    res = not(lst[idx] & bit)
-    lst[idx] |= bit
-    lst[(idx + 16 & 0x1f)] = 0
-    return res
+from . import gmid, isnew, launch, Event, Lock  # __init__.py
+getmid = gmid()  # Message ID generator
+gc.collect()
 
 
 class Client:
@@ -71,11 +38,11 @@ class Client:
         ap.active(False)
         self.server = socket.getaddrinfo(server, port)[0][-1]  # server read
         gc.collect()
-        self.evfail = asyn.Event(100)  # 100ms pause
-        self.evread = asyn.Event(100)
-        self.evsend = asyn.Event(100)
-        self.wrlock = asyn.Lock(100)
-        self.lock = asyn.Lock(100)
+        self.evfail = Event(100)  # 100ms pause
+        self.evread = Event(100)
+        self.evsend = Event(100)
+        self.wrlock = Lock(100)
+        self.lock = Lock(100)
         self.connects = 0  # Connect count for test purposes/app access
         self._concb = connected_cb
         self._concbargs = () if connected_cb_args is None else connected_cb_args
@@ -221,7 +188,7 @@ class Client:
                 init = False
                 self.close()  # Close socket
                 s.disconnect()
-                await asyncio.sleep(1)
+                await asyncio.sleep_ms(self.timeout * 2)  # TEST ensure server qos detects
                 while s.isconnected():
                     await asyncio.sleep(1)
 

@@ -9,7 +9,7 @@
 import uasyncio as asyncio
 import ujson
 from . import asi2c_i
-from micropython_iot import primitives  # Stripped down asyn.py
+from micropython_iot import Lock, Event  # __init__ Stripped down asyn.py
 
 
 class AppBase:
@@ -18,8 +18,8 @@ class AppBase:
         self.verbose = verbose
         self.initial = True
         self._status = False  # Server status
-        self.wlock = primitives.Lock(100)
-        self.rxevt = primitives.Event()  # rx data ready
+        self.wlock = Lock(100)
+        self.rxevt = Event()  # rx data ready
         config.insert(0, conn_id)
         config.append('cfg')  # Marker defines a config list
         self.cfg = ''.join((ujson.dumps(config), '\n'))

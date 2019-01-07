@@ -15,7 +15,7 @@ upython = sys.implementation.name == 'micropython'
 if upython:
     import uasyncio as asyncio
     import ujson as json
-    import primitives
+    from micropython_iot import Event
 else:
     import asyncio
     import json
@@ -27,7 +27,7 @@ from .local_tx import PORT, TIMEOUT
 class App:
     data = None
     if upython:
-        trig_send = primitives.Event()
+        trig_send = Event()
     else:
         trig_send = asyncio.Event()
 

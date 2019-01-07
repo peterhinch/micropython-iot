@@ -12,6 +12,7 @@
 
 # Run under CPython 3.5+ or MicroPython Unix build
 import sys
+from . import gmid, isnew  # __init__.py
 
 upython = sys.implementation.name == 'micropython'
 if upython:
@@ -20,8 +21,7 @@ if upython:
     import utime as time
     import uselect as select
     import uerrno as errno
-    from . import primitives
-    Lock = primitives.Lock
+    from . import Lock
 else:
     import socket
     import asyncio
@@ -29,27 +29,6 @@ else:
     import select
     import errno
     Lock = asyncio.Lock
-
-# Create message ID's. Initially 0 then 1 2 ... 254 255 1 2
-def gmid():
-    mid = 0
-    while True:
-        yield mid
-        mid = (mid + 1) & 0xff
-        mid = mid if mid else 1
-
-# Return True if a message ID has not already been received
-def isnew(mid, lst=bytearray(32)):
-    if mid == -1:
-        for idx in range(32):
-            lst[idx] = 0
-        return
-    idx = mid >> 3
-    bit = 1 << (mid & 7)
-    res = not(lst[idx] & bit)
-    lst[idx] |= bit
-    lst[(idx + 16 & 0x1f)] = 0
-    return res
 
 # Read the node ID. There isn't yet a Connection instance.
 # CPython does not have socket.readline. Return 1st string received
@@ -137,7 +116,7 @@ class Connection:
                 print('Duplicate client {} ignored.'.format(client_id))
                 c_sock.close()
             else:  # Reconnect after failure
-                cls._conns[client_id].sock = c_sock
+                cls._conns[client_id].reconnect(c_sock)
         else: # New client: instantiate Connection
             Connection(loop, c_sock, client_id, init_str, verbose)
 
@@ -186,12 +165,17 @@ class Connection:
             print('Unknown client {} has connected. Expected {}.'.format(
                 client_id, Connection._expected))
 
-        self._init = True
+        self._init = True  # Server power-up
+        self._wr_pause = True  # Initial or subsequent client connection
         self.getmid = gmid()  # Generator for message ID's
         self.lock = Lock()
         loop.create_task(self._keepalive())
         self.lines = []
         loop.create_task(self._read(init_str))
+
+    def reconnect(self, c_sock):
+        self.sock = c_sock
+        self._wr_pause = True
 
     async def _read(self, init_str):
         while True:
@@ -255,7 +239,7 @@ class Connection:
                         # mid == 0 : client has power cycled
                         if not mid:
                             isnew(-1)
-                        # _init : server has restarted
+                        # _init : server has powered up
                         if self._init or not mid or isnew(mid):
                             self._init = False
                             return ''.join((line[2:], '\n'))
@@ -296,6 +280,10 @@ class Connection:
             if self.verbose and not self.status():
                 print('Writer Client:', self.client_id, 'awaiting OK status')
             await self._status_coro()
+            if self._wr_pause:  # Initial or subsequent connection
+                self._wr_pause = False
+                await asyncio.sleep(0.2)  # TEST give client time
+
 #            self.verbose and print('Writer Client:', self.client_id, 'OK')
             async with self.lock:  # >1 writing task?
                 ok = await self._send(buf)  # Fail clears status

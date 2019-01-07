@@ -15,8 +15,7 @@ from machine import Pin
 
 from . import local_tx as local
 from . import aswitch
-from micropython_iot import client
-from micropython_iot import primitives
+from micropython_iot import client, Event
 
 
 class App:
@@ -27,7 +26,7 @@ class App:
         self.switch = aswitch.Switch(Pin(0, Pin.IN))
         self.switch.close_func(lambda: self.must_send.set())
         self.switch.open_func(lambda: self.must_send.set())
-        self.must_send = primitives.Event()
+        self.must_send = Event()
         self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, led)
         loop.create_task(self.start(loop))
 
