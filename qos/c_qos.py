@@ -19,7 +19,7 @@ class App:
         self.verbose = verbose
         self.timeout = timeout
         led = Pin(2, Pin.OUT, value=1)  # Optional LED
-        self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, led, 2)
+        self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, led)
         self.tx_msg_id = 0
         self.dupes = 0  # Incoming dupe count
         self.missing = 0

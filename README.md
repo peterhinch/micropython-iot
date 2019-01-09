@@ -1,8 +1,15 @@
-# NOTE: Under development!
+# Introduction
 
-This library has been refactored as Python packages. Other API changes have
-been implemented. Notably local configuration is now done by Client constructor
-args.
+This library provides a resilient bidirectional communication link between a
+WiFi connected ESP8266 and a server on the wired LAN. The ESP8266 code can run
+for indefinite periods. Temporary WiFi or server outages are tolerated without
+message loss.
+
+The API is simple and consistent between client and server applications,
+comprising `write` and `readline` methods.
+
+Thanks are due to Kevin Köck for numerous contributions of code, ideas and bug
+reports.
 
 # 0. MicroPython IOT application design
 
@@ -274,8 +281,9 @@ from micropython_iot.example_remote_control import c_comms_rx
 
 #### The qos demo
 
-This tests guaranteed message delivery. On the server navigate to the parent
-directory of `micropython_iot`and run:
+This test program verifies that each message (in each direction) is received
+exactly once. On the server navigate to the parent directory of
+`micropython_iot` and run:
 ```
 python3 -m micropython_iot.qos.s_qos_cp
 ```
@@ -290,8 +298,8 @@ from micropython_iot.qos import c_qos
 
 #### Troubleshooting the demos
 
-On startup an `OSError` will be thrown if an initial connection to the WiFi and
-to the server cannot be established.
+On startup an `OSError` will be thrown if initial connectivity fails to be
+established to the WiFi or to the server.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -373,14 +381,16 @@ Constructor args:
  9. `led=None` If a `Pin` instance is passed it will be toggled each time a
  keepalive message is received. Can provide a heartbeat LED if connectivity is
  present.
- 10. `qos=0` Quality of service: see [section 7](./README.md#7-quality-of-service).
 
 Methods (asynchrounous):
  1. `readline` No args. Pauses until data received. Returns a line.
- 2. `write` Args: `buf`, `pause=True`. `buf` holds a line of text. If `pause`
- is set the method will pause after writing to ensure that the total elapsed
- time exceeds the timeout period. This minimises the risk of buffer overruns in
- the event that an outage occurs.
+ 2. `write` Args: `buf`, `pause=True`, `qos=True`. `buf` holds a line of text.  
+ If `pause` is set the method will pause after writing to ensure that the total
+ elapsed time exceeds the timeout period. This minimises the risk of buffer
+ overruns in the event that an outage occurs.  
+ By default, if `qos` is set, the system guarantees delivery. If it is clear
+ messages may (rarely) be lost in the event of an outage. See
+ [Quality of service](./README.md#7-quality-of-service).
 
 Methods (synchronous):
  1. `status` Returns `True` if connectivity is present.
@@ -498,11 +508,14 @@ The `Connection` instance:
 
 Methods (asynchrounous):
  1. `readline` No args. Pauses until data received. Returns a line.
- 2. `write` Args: `buf`, `pause=True`. `buf` holds a line of text. If `pause`
- is set the method will pause after writing to ensure that the total elapsed
- time exceeds the timeout period. This minimises the risk of buffer overruns in
- the event that an outage occurs. Does not preclude launching a further `write`
- coro if messages need to be sent in quick succession.
+ 2. `write` Args: `buf`, `pause=True`, `qos=True`. `buf` holds a line of text.  
+ If `pause` is set the method will pause after writing to ensure that the total
+ elapsed time exceeds the timeout period. This minimises the risk of buffer
+ overruns in the event that an outage occurs. Does not preclude launching a
+ further `write` coro if messages need to be sent in quick succession.  
+ By default, if `qos` is set, the system guarantees delivery. If it is clear
+ messages may (rarely) be lost in the event of an outage. See
+ [Quality of service](./README.md#7-quality-of-service).
 
 Methods (synchronous):
  1. `status` Returns `True` if connectivity is present.
@@ -583,20 +596,16 @@ overflow.
 
 # 7. Quality of service
 
-In MQTT parlance transmission from the client to the server operates at qos==0:
-there is no guarantee of packet delivery. Normally when an outage occurs
-transmission is delayed until connectivity resumes. Packet loss will occur if,
-at the time when a message is sent, an outage has occurred but has not yet been
-detected by the sender.
+In MQTT parlance communication is at qos==2: there is a guarantee of packet
+delivery. Messages sent will be received exactly once. However there is no
+guarantee that they will be received in the same order. On occasion after an
+outage, messages may be received out-of-order.
 
-This may be remedied by setting the `qos=0` client contructor arg to 1 or 2. A
-nonzero value guarantees that the message will be delivered exactly once. There
-is a small chance of messages being delivered out of order in the case where a
-number of messages are sent in the interval between an outage occurring and
-being detected.
-
-Messages from server to client are delivered with qos > 0 regardless of the
-client's `qos` setting.
+It is possible to turn this behaviour off by specifying `qos=False` to client
+or server `write` methods. In this instance messages may occasionally be lost
+if an outage occurs immediately before issuing `write`. With `qos` the mesage
+would be sent when the outage cleared. The use-case for disabling `qos` is
+where such a delayed message would be useless to the application
 
 While delivery may be guaranteed, timeliness is not. Messages are inevitably
 delayed for the duration of an outage.

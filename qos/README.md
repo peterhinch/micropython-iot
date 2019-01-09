@@ -1,11 +1,11 @@
 # Improving Quality of Service
 
-In MQTT parlance the link operates at qos==0: there is no guarantee of packet
-delivery. If an outage is detected before transmission, the `write` will pause
-until connectivity resumes. Packet loss will occur if, at the time when a
-message is sent, an outage has occurred but has not yet been detected by the
-sender. In this case the sender puts the packet into a socket whose peer is
-lost.
+Without special measures, in MQTT parlance the link would operate at qos==0:
+there would be no guarantee of packet delivery. If an outage is detected before
+transmission, the `write` will pause until connectivity resumes. Packet loss
+will occur if, at the time when a message is sent, an outage has occurred but
+has not yet been detected by the sender. In this case the sender puts the
+packet into a socket whose peer is lost.
 
 The desired outcome is qos==2. In this case delivery is guaranteed, and there
 is also a guarantee that every transmitted message will be received and
@@ -52,4 +52,3 @@ messages encountered at either end of the link:
  1. `c_qos.py` Client-side application.
  2. `s_qos_cp.py` Server-side application: run under CPython 3.5+ or
  MicroPython.
-
