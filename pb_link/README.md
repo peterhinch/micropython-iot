@@ -61,7 +61,16 @@ On the Pyboard create a directory `/sd/micropython_iot`. Copy the following
 files to this directory:
  1. `__init__.py`
 
-Copy the directory `pb_link.py` to `/sd/micropython_iot`.
+Edit `micropython_iot/pb_link/config.py` to match local conditions, notably
+server IP address and WiFi credentials. WiFi credentials may be empty strings
+if the ESP8266 has been initialised with a WiFi connection.
+
+Create the directory  `/sd/micropython_iot/pb_link` and copy the following
+files from `micropython_iot/pb_link` to it:
+ 1. `app_base.py`
+ 2. `asi2c_i.py`
+ 3. `config.py`
+ 4. `pb_client.py`
 
 Start by issuing
 ```python
@@ -81,7 +90,7 @@ Copy the directory `esp_link` with its contents to `/pyboard/micropython_iot`.
 
 Edit `/pyboard/main.py` to read:
 ```python
-from micropython_iot.pb_link import pb_client
+from micropython_iot.esp_link import esp_link
 ```
 
 ### Dependency
@@ -91,11 +100,8 @@ from micropython_iot.pb_link import pb_client
 
 # 3. Running the demo
 
-On the Pyboard edit the file `/sd/micropython_iot/pb_link/config.py` to set the
+Ensure `/sd/micropython_iot/pb_link/config.py` matches local conditions for
 WiFi credentials and the server IP address.
-
-Ensure that the ESP8266 has been initialised with a WiFi connection or ensure
-that the Pyboard's `local.py` has SSID and Password to enable it to connect.
 
 On the server navigate to the parent directory of `micropython_iot` and run
 ```
@@ -123,11 +129,11 @@ entries:
  3. Send reports every N seconds (0: never) (`int`).
  4. SSID (str).
  5. Password (str).
- 6. qos Quality of service (0 or 1). See [section 6](./README.md#6-quality-of-service).
 
 If having a file with credential details is unacceptable an empty string ('')
 may be used in the SSID and Password fields. In this case the ESP8266 will
-attempt to connect to the WLAN which the device last used.
+attempt to connect to the WLAN which the device last used; if it fails there is
+no means of recovery and the link will fail.
 
 `config.py` also provides a `hardware` list. This contains `Pin` and `I2C `
 details which may be changed. Pins are arbitrary and the I2C interface may be
@@ -165,18 +171,8 @@ If the WiFi suffers an outage these methods may pause for the duration.
 ## 4.3 Special messages
 
 The ESP8266 sends messages to the Pyboard in response to changes in server
-status or under error conditions or because reports have been requested. Such
-messages comprise JSON encoded lists where element[0] defines the message type:
-
- 1. `['error', 'nature of error']` Error message.
- 2. `['status', boolean]` Status message. This is sent whenever the server
- status changes at the start or end of a WiFi or server outage.
- 3. `['report', nconnects, count, mem_free]` Report: sent at the requested
- interval.  
- `nconnects` Count of the number of times the ESP8266 has had to connect to the
- WiFi or  server.  
- `count` Incrementing report number (can be used to estimate  uptime).  
- `mem_free` Free memory on the ESP8266 (in bytes).
+status or under error conditions or because reports have been requested. These
+trigger asynchronous bound methods which the user may override.
 
 ## 4.4 The AppBase class
 
@@ -194,8 +190,19 @@ Coroutines:
  3. `reboot` Physically reboot the ESP8266. The system will resynchronise and
  resume operation.
 
-Methods:
+Synchronous methods:
  1. `close` Shuts down the Pyboard/ESP8266 interface.
+
+Asynchronous bound methods. These may be overridden in derived classes:
+
+ 1. `bad_wifi` No args. Awaited if WiFi can't connect in 4 seconds from boot.
+ 2. `bad_server` No args. Awaited if server refuses an initial connection.
+ 3. `report` Regularly launched if reports are requested in the config.  It
+ receives a 3-list as an arg: `[connect_count, report_no, mem_free]` which
+ describes the ESP8266 status.
+ 4. `server_ok` Launched whenever the status of the link to the server changes,
+ by a WiFi server outage starting or ending. Receives a single boolean arg `up`
+ being the new status.
 
 If a WiFi or server outage occurs, `readline` and `write` coroutines will pause
 for the duration.
@@ -233,26 +240,9 @@ suitable for this task is the
 
 # 6. Quality of service
 
-In the case where the user client application resides on the ESP8266 quality of
-service in both directions is controlled at application level. This is detailed
-[in this doc](https://github.com/peterhinch/micropython-iot/blob/master/qos/README.md).
-
-Where the client application is on a Pyboard the behaviour of the ESP8266 in
-messaging the server is determined by the config list.
-
-The config list sent to the ESP8266 enables two levels of qos for messages from
-the Pyboard to the server. Level 0 has no guarantee of message delivery. Level
-1 indicates that the message will be delivered at least once but may be sent
-twice if an outage occurs at the "wrong" time. **NOTE** Level 1 is not yet
-working.
-
-Achieving qos==2 (ignoring duplicates) may be performed at application level as
-described in the above doc.
-
-Specifying level 1 limits the throughput of messages to the server as the
-transmission coroutine pauses for the timeout period after each message.
-
-The QOS in the reverse direction is controlled by the server-side application.
+In MQTT parlance the Pyboard link operates at qos==2: messages will be delivered
+exactly once. In rare circumstances immediately after an outage, messages may be
+delivered out of order.
 
 Note that if the ESP8266 actually crashes all bets are off. The system will
 recover but message loss may occur. Two observations:

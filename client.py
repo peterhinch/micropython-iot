@@ -137,6 +137,7 @@ class Client:
     async def _run(self, loop):
         # ESP8266 stores last good connection. Initially give it time to re-establish
         # that link. On fail, .bad_wifi() allows for user recovery.
+        await asyncio.sleep(1)  # Didn't always start after power up
         s = self._sta_if
         s.connect()
         for _ in range(4):
@@ -216,12 +217,12 @@ class Client:
         except OSError:
             self._evfail.set('reader fail')  # ._run cancels other coros
 
-    async def _writer(self):
+    async def _writer(self):  # (re)started:
         # Wait until something is received from the server before we send.
         t = self._tim_short
         while not self._ok:
             await asyncio.sleep_ms(t)
-        await asyncio.sleep_ms(t)
+        await asyncio.sleep_ms(self._to // 3)  # conservative
         try:
             while True:
                 await self._evsend

@@ -15,9 +15,8 @@
 # 5. Password (str).
 # Use empty string ('') in  SSID and PW to only connect to the WLAN which the
 # ESP8266 already "knows".
-# 6. QOS (0 or 1)
 
-config = [8123, '192.168.0.41', 1500, 10, 'misspiggy', '6163VMiqSTyx', 1]
+config = [8123, '192.168.0.42', 1500, 10, 'misspiggy', '6163VMiqSTyx']
 
 try:
     from pyb import I2C  # Only pyb supports slave mode

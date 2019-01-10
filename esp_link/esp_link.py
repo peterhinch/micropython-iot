@@ -24,7 +24,7 @@ gc.collect()
 class LinkClient(client.Client):
     def __init__(self, loop, config, swriter, server_status, verbose):
         super().__init__(loop, config[0], config[2], config[1], config[3],
-                         connected_cb=server_status, verbose=verbose, qos=config[6])
+                         connected_cb=server_status, verbose=verbose)
         self.config = config
         self.swriter = swriter
 
@@ -84,7 +84,7 @@ class App:
             except ValueError:
                 self.verbose and print('JSON error. Got:', line)
             else:
-                if isinstance(config, list) and len(config) == 9 and config[-1] == 'cfg':
+                if isinstance(config, list) and len(config) == 8 and config[-1] == 'cfg':
                     break  # Got good config
                 else:
                     self.verbose and print('Got bad config', line)
@@ -108,7 +108,7 @@ class App:
             # If the following pauses for an outage, the Pyboard may write
             # one more line. Subsequent calls to channel.write pause pending
             # resumption of communication with the server.
-            await self.cl.write(line)
+            await self.cl.write(line, pause=False, qos=True)
             self.verbose and print('Sent', line, 'to server app')
 
     async def from_server(self):

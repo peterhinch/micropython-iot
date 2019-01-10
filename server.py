@@ -21,7 +21,7 @@ if upython:
     import utime as time
     import uselect as select
     import uerrno as errno
-    from . import Lock, Event
+    from . import Lock
 else:
     import socket
     import asyncio
@@ -29,7 +29,6 @@ else:
     import select
     import errno
     Lock = asyncio.Lock
-    Event = asyncio.Event
 
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
@@ -165,10 +164,11 @@ class Connection:
             print('Unknown client {} has connected. Expected {}.'.format(
                 client_id, Connection._expected))
 
-        # Event set after initial or subsequent client connection when 1st
-        # keepalive received. We delay sending anything other than keepalives
-        # this has occurred.
-        self._client_up = Event(100) if upython else Event()
+        # ._wr_pause set after initial or subsequent client connection. Cleared
+        # after 1st keepalive received. We delay sending anything other than
+        # keepalives while ._wr_pause is set
+        self._wr_pause = True
+        self._rd_wait = True
         self._getmid = gmid()  # Generator for message ID's
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
@@ -177,12 +177,13 @@ class Connection:
 
     def _reconnect(self, c_sock):
         self._sock = c_sock
-        self._client_up.clear()  # Not up until we receive
+        self._wr_pause = True
+        self._rd_wait = True
 
     # Have received 1st data packet from client.
     async def _client_active(self):
         await asyncio.sleep(0.2)  # Let ESP get out of bed.
-        self._client_up.set()  # Now we can send data
+        self._wr_pause = False
 
     def status(self):
         return self._sock is not None
@@ -248,8 +249,9 @@ class Connection:
                         self._close()  # Reset by peer 104
                 else:
                     start = time.time()  # Something was received
-                    if not self._client_up.is_set():  # And it's the 1st item
-                        self._loop.create_task(self._client_active())  # Can write
+                    if self._rd_wait:  # 1st item after (re)start
+                        self._rd_wait = False  # Enable write after delay
+                        self._loop.create_task(self._client_active())
                     if d == b'':  # Reset by peer
                         self._close()
                     buf.extend(d)
@@ -295,7 +297,8 @@ class Connection:
             if buf is None:
                 buf = '\n'  # Keepalive. Send now: don't care about loss
             else:  # Check if client is ready after initial or subsequent
-                await self._client_up.wait()  # connection
+                while self._wr_pause:
+                    await asyncio.sleep(self._tim_short)
 
             async with self._wlock:  # >1 writing task?
                 ok = await self._send(buf)  # Fail clears status
