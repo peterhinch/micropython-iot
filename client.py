@@ -353,7 +353,8 @@ class Client:
                 s.disconnect()
                 self._feed(0)
                 # await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage.
-                # server should detect outage if client reconnects or no ACKs are received in qos
+                # server should detect outage if client reconnects or no ACKs are received in qos.
+                # Also reconnect takes 3s which is more than enough.
                 while s.isconnected():
                     await asyncio.sleep(1)
                     self._feed(0)
