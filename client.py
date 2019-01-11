@@ -54,6 +54,7 @@ class Client:
         self._sock = None
         self._ok = False  # Set after 1st successful read
         self._init = True
+        self._rxacks = set()
         gc.collect()
         loop.create_task(self._run(loop))
 
@@ -76,10 +77,11 @@ class Client:
     async def write(self, buf, pause=True, qos=True):
         # Prepend message ID to a copy of buf
         fstr =  '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
-        buf = fstr.format(next(getmid), buf)
+        mid = next(getmid)
+        buf = fstr.format(mid, buf)
         tsent = await self._do_write(buf)
         if qos:  # Retransmit if link has gone down
-            self._loop.create_task(self._do_qos(buf))
+            self._loop.create_task(self._do_qos(mid, buf))
         if pause:  # Control tx rate: <= 1 msg per timeout period
             dt = self._to - utime.ticks_diff(utime.ticks_ms(), tsent)
             if dt > 0:
@@ -103,11 +105,18 @@ class Client:
     # **** API end ****
 
     # qos>0 Repeat tx if outage occurred after initial tx (1st may have been lost)
-    async def _do_qos(self, line):
+    async def _do_qos(self, mid, line):
         while True:
-            await asyncio.sleep_ms(self._to)
-            if self._ok:
-                return
+            while not self._ok:  # Wait for any outage to clear
+                await asyncio.sleep_ms(self._tim_short)
+            tstart = utime.ticks_ms()  # Wait for ACK
+            while mid not in self._rxacks:
+                await asyncio.sleep_ms(self._tim_short)
+                if utime.ticks_diff(utime.ticks_ms(), tstart) > self._to:
+                    break  # No ACK received: retransmit
+            else:
+                self._rxacks.remove(mid)
+                break  # ACK received, all done
             await self._do_write(line)
             self._verbose and print('Repeat', line, 'to server app')
 
@@ -202,8 +211,16 @@ class Client:
         try:
             while True:
                 line = await self._readline()  # OSError on fail
+                cmid = line[0:2]  # MID as string
+                mid = int(cmid, 16)  # as int
+                if len(line) == 2:  # Got ACK: record the fact
+                    self._rxacks.add(mid)
+                    continue  # All done
+                # Normal message received
+                async with self._lock:  # Send ACK
+                    await self._send(cmid)
+
                 # Discard dupes
-                mid = int(line[0:2], 16)
                 # mid == 0 : Server has power cycled
                 if not mid:
                     isnew(-1)  # Clear down rx message record
@@ -222,7 +239,6 @@ class Client:
         t = self._tim_short
         while not self._ok:
             await asyncio.sleep_ms(t)
-        await asyncio.sleep_ms(self._to // 3)  # conservative
         try:
             while True:
                 await self._evsend
