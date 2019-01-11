@@ -53,7 +53,6 @@ class Client:
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
         self._ok = False  # Set after 1st successful read
-        self._init = True
         gc.collect()
         loop.create_task(self._run(loop))
 
@@ -208,8 +207,7 @@ class Client:
                 if not mid:
                     isnew(-1)  # Clear down rx message record
                 # _init : client has restarted. mid == 0 server power up
-                if self._init or not mid or isnew(mid):
-                    self._init = False
+                if not mid or isnew(mid):
                     # Read succeeded: flag .readline
                     self._evread.set(line[2:].decode())
                 if c == self.connects:
