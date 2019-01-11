@@ -30,20 +30,20 @@ class LinkClient(client.Client):
 
     # Initial connection to stored network failed. Try to connect using config
     async def bad_wifi(self):
-        self.verbose and print('bad_wifi started')
+        self._verbose and print('bad_wifi started')
         config = self.config
         sta_if = self._sta_if
         ssid = config[5]  # SSID
         # Either ESP does not 'know' this WLAN or it needs time to connect.
         if ssid == '':  # No SSID supplied: can only keep trying
-            self.verbose and print('Connecting to ESP8266 stored network...')
+            self._verbose and print('Connecting to ESP8266 stored network...')
             ssid = 'stored network'
         else:
             # Try to connect to specified WLAN. ESP will save details for
             # subsequent connections.
-            self.verbose and print('Connecting to specified network...')
+            self._verbose and print('Connecting to specified network...')
             sta_if.connect(ssid, config[6])
-        self.verbose and print('Awaiting WiFi.')
+        self._verbose and print('Awaiting WiFi.')
         for _ in range(20):
             await asyncio.sleep(1)
             if sta_if.isconnected():
@@ -96,6 +96,7 @@ class App:
         await self.cl
         loop.create_task(self.to_server(loop))
         loop.create_task(self.from_server())
+        loop.create_task(self.crashdet())
         if config[4]:
             loop.create_task(self.report(config[4]))
 
@@ -124,6 +125,11 @@ class App:
 
     async def server_status(self, status):
         await self.swriter.awrite('u\n' if status else 'd\n')
+
+    async def crashdet(self):
+        while True:
+            await asyncio.sleep(2)
+            await self.swriter.awrite('k\n')
 
     async def report(self, time):
         data = [0, 0, 0]

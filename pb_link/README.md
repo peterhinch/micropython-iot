@@ -71,6 +71,7 @@ files from `micropython_iot/pb_link` to it:
  2. `asi2c_i.py`
  3. `config.py`
  4. `pb_client.py`
+ 5. `aswitch.py`
 
 Start by issuing
 ```python
@@ -144,7 +145,10 @@ The `hardware` list comprises the following elements:
  0. `i2c`  The I2C interface object.
  1. `syn` A Pyboard `Pin` instance (synchronisation with ESP8266).
  2. `ack` Ditto.
- 3. `rst` A Pyboard `Pin` instance (resets ESP8266).
+ 3. `rst` A reset tuple `(Pin, level, pulse_length)` where:
+ `Pin` is the Pyboard Pin instance linked to ESP8266 reset.  
+ `Level` is 0 for the ESP8266.  
+ `pulse_length` A value of 200 is recommended (units are ms).
 
 ## 4.2 Application design
 
@@ -204,6 +208,9 @@ Asynchronous bound methods. These may be overridden in derived classes:
  by a WiFi server outage starting or ending. Receives a single boolean arg `up`
  being the new status.
 
+Behaviour of the `AppBase` default bound methods: the first two raise 
+`OSError`s with a suitable message, the others print a message and quit.
+
 If a WiFi or server outage occurs, `readline` and `write` coroutines will pause
 for the duration.
 
@@ -217,26 +224,19 @@ Typically it launches user coroutines.
 # 5. ESP8266 crash detection
 
 The design of the ESP8266 communication link with the server is resilient and
-crashes should not occur. But where 100% reliability is required and a reset
+crashes should not occur. But power outages are always possible. If a reset
 wire is in place there are two levels of crash recovery.
 
-If I2C communication fails, the underlying
+If I2C communication fails due to an ESP8266 reboot or power cycle, the
+underlying
 [asynchronous link](https://github.com/peterhinch/micropython-async/blob/master/i2c/README.md)
 will reboot the ESP8266 and re-synchronise without the need for explicit code.
 This caters for the bulk of potential failures and can be verified by pressing
 the ESP8266 reset button while the application is running.
 
-The truly paranoid should note that the ESP8266 I2C interface is handled in an
-interrupt context. So certain types of failure will be undetected by this
-mechanism: the ESP8266 might execute an infinite loop yet still respond to
-interrupts and handle I2C communications.
-
-This is heading into "highly unlikely" territory, but for bullet-proof recovery
-`config.py` can be set to ensure that the ESP8266 sends periodic reports to the
-Pyboard. The application could time the interval between reception of these
-messages and, if the interval was excessive, issue `.reboot()`. A timer
-suitable for this task is the
-[Delay_ms class](https://github.com/peterhinch/micropython-async/blob/master/DRIVERS.md).
+The `esp_link.py` driver sends periodic keepalives to the Pyboard. The
+`AppBase` pyboard client reboots the ESP8266 if these stop being received. This
+cab be verified with a serial connection to the ESP8266 and issuing `ctrl-c`.
 
 # 6. Quality of service
 
