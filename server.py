@@ -263,10 +263,15 @@ class Connection:
                         # Separate reponses into lines and ACKs
                         self._rxacks.update([int(x, 16) for x in l if len(x) == 2])
                         l = [x for x in l if len(x) != 2]  # Lines received
-                        self._lines.extend(l)
-                        buf = bytearray(last.encode('utf8')) if last else bytearray()
-                        for line in l:
-                            await self._vwrite(line[0:2])  # Send ACK
+                        if len(l):
+                            self._lines.extend(l)
+                            buf = bytearray(last.encode('utf8')) if last else bytearray()
+                            loop.create_task(self._sendacks, [x[0:2] for x in l])
+
+    async def _sendacks(self, acks):
+        async with self._wlock:
+            for ack in acks:
+                await self._send('{}\n'.format(ack))
 
     async def _keepalive(self):
         while True:
