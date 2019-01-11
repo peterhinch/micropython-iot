@@ -20,7 +20,8 @@ import utime
 import ubinascii
 
 gc.collect()
-from . import gmid, isnew, launch, Event, Lock, SetByte  # __init__.py
+from . import gmid, launch, Event, Lock  # __init__.py
+
 getmid = gmid()  # Message ID generator
 gc.collect()
 

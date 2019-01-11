@@ -34,7 +34,6 @@ else:
     Lock = asyncio.Lock
 
 from . import gmid
-getmid = gmid()  # Message ID generator
 
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
@@ -206,9 +205,14 @@ class Connection:
         await asyncio.sleep(0.2)  # Let ESP get out of bed.
         self._wr_pause = False
 
+    # Have received 1st data packet from client.
+    async def _client_active(self):
+        await asyncio.sleep(0.2)  # Let ESP get out of bed.
+        self._wr_pause = False
+
     def status(self):
         return self._sock is not None
-    
+
     __call__ = status
 
     def __await__(self):
@@ -230,10 +234,10 @@ class Connection:
             return l
         # Must wait for data
         while True:
-            if not self():  # Outage
-                self._verbose and print('Client:', self._cl_id, 'awaiting connection')
-                await self._status_coro()
-                self._verbose and print('Client:', self._cl_id, 'connected')
+            if self._verbose and not self():
+                print('Reader Client:', self._cl_id, 'awaiting OK status')
+            await self._status_coro()
+            self._verbose and print('Reader Client:', self._cl_id, 'OK')
             while self():
                 h,l = self._readline()
                 if l is not None:
