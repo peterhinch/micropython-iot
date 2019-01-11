@@ -12,7 +12,7 @@
 
 # Run under CPython 3.5+ or MicroPython Unix build
 import sys
-from . import gmid  # __init__.py
+from . import gmid, isnew  # __init__.py
 
 upython = sys.implementation.name == 'micropython'
 if upython:
@@ -22,19 +22,15 @@ if upython:
     import uselect as select
     import uerrno as errno
     from . import Lock
-    import ubinascii
 else:
     import socket
     import asyncio
     import time
     import select
     import errno
-    import binascii as ubinascii
-
     Lock = asyncio.Lock
 
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
-
 
 # Read the node ID. There isn't yet a Connection instance.
 # CPython does not have socket.readline. Return 1st string received
@@ -90,8 +86,8 @@ async def run(loop, expected, verbose=False, port=8123, timeout=1500):
             except OSError:
                 c_sock.close()
             else:
-                loop.create_task(Connection.go(loop, to_secs, data, verbose, c_sock, s_sock,
-                                               expected))
+                Connection.go(loop, to_secs, data, verbose, c_sock, s_sock,
+                              expected)
         await asyncio.sleep(0.2)
 
 
@@ -104,23 +100,9 @@ class Connection:
     _server_sock = None
 
     @classmethod
-    async def go(cls, loop, to_secs, data, verbose, c_sock, s_sock, expected):
-        line, init_str = data.split('\n', 1)
-        preheader = bytearray(ubinascii.unhexlify(line[:10].encode()))
-        mid = preheader[0]
-        if mid != 0x2C:
-            c_sock.close()
-            verbose and print("Wrong protocol")
-            return
-        client_id = line[10:]
-        print("Got client_id", preheader, client_id)
-        preheader[1] = preheader[2] = preheader[3] = 0
-        preheader[4] = 0x2C  # ACK
-        fstr = "{}\n"
-        buf = fstr.format(ubinascii.hexlify(preheader).decode())
+    def go(cls, loop, to_secs, data, verbose, c_sock, s_sock, expected):
+        client_id, init_str = data.split('\n', 1)
         verbose and print('Got connection from client', client_id)
-        if preheader[4] == 0xFF:
-            verbose and print("Reconnected client", client_id)
         if cls._server_sock is None:  # 1st invocation
             cls._server_sock = s_sock
             cls._expected.update(expected)
@@ -130,12 +112,8 @@ class Connection:
                 c_sock.close()
             else:  # Reconnect after failure
                 cls._conns[client_id]._reconnect(c_sock)
-                await cls._conns[client_id]._vwrite(buf, qos=False, mid=preheader[0])
-                cls._conns[client_id]._init_ack_sent = True
-        else:  # New client: instantiate Connection
-            con = Connection(loop, to_secs, c_sock, client_id, init_str, verbose)
-            await con._vwrite(buf, qos=False, mid=preheader[0])
-            con._init_ack_sent = True
+        else: # New client: instantiate Connection
+            Connection(loop, to_secs, c_sock, client_id, init_str, verbose)
 
     # Server-side app waits for a working connection
     @classmethod
@@ -145,6 +123,7 @@ class Connection:
                 c = cls._conns[client_id]
                 # await c 
                 # works but under CPython produces runtime warnings. So do:
+                await c._status_coro()
                 return c
             await asyncio.sleep(0.5)
 
@@ -176,6 +155,7 @@ class Connection:
         self._tim_ka = self._to_secs / 2  # Keepalive interval
         self._sock = c_sock  # Socket
         self._cl_id = client_id
+        self._init = True  # Server power-up
         self._verbose = verbose
         Connection._conns[client_id] = self
         try:
@@ -184,27 +164,31 @@ class Connection:
             print('Unknown client {} has connected. Expected {}.'.format(
                 client_id, Connection._expected))
 
+        # ._wr_pause set after initial or subsequent client connection. Cleared
+        # after 1st keepalive received. We delay sending anything other than
+        # keepalives while ._wr_pause is set
+        self._wr_pause = True
         self._rd_wait = True
         self._getmid = gmid()  # Generator for message ID's
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
-        self._rxmid0 = False  # Set if mid == 0 received after client reboot
-
-        self._ack_mid = -1  # last received ACK mid
-        self._tx_mid = -1  # sent mid, used for keeping messages in order
-        self._recv_mid = -1  # last received mid, used for deduping as message can't be out-of-order
-        self._init_ack_sent = False  # pauses writer until ack has been sent
-
+        self._rxacks = set()  # Received ACKs pending checking
         loop.create_task(self._read(init_str))
         loop.create_task(self._keepalive())
 
     def _reconnect(self, c_sock):
         self._sock = c_sock
+        self._wr_pause = True
         self._rd_wait = True
 
-    def status(self):
-        return self._sock is not None and self._init_ack_sent is True
+    # Have received 1st data packet from client.
+    async def _client_active(self):
+        await asyncio.sleep(0.2)  # Let ESP get out of bed.
+        self._wr_pause = False
 
+    def status(self):
+        return self._sock is not None
+    
     __call__ = status
 
     def __await__(self):
@@ -212,8 +196,7 @@ class Connection:
             while not self():
                 yield self._tim_short
         else:  # CPython: Meet requirement for generator in __await__
-            while self.status() is False:
-                yield asyncio.sleep(self._tim_short)
+            return self._status_coro().__await__()
 
     __iter__ = __await__
 
@@ -225,13 +208,20 @@ class Connection:
         while True:
             if self._verbose and not self():
                 print('Reader Client:', self._cl_id, 'awaiting OK status')
-            while self._sock is None:
-                await asyncio.sleep(0.1)
+            await self._status_coro()
             self._verbose and print('Reader Client:', self._cl_id, 'OK')
             while self():
                 if len(self._lines):
                     line = self._lines.pop(0)
-                    return line
+                    # Discard dupes: get message ID
+                    mid = int(line[0:2], 16)
+                    # mid == 0 : client has power cycled
+                    if not mid:
+                        isnew(-1)
+                    # _init : server has powered up
+                    if self._init or not mid or isnew(mid):
+                        self._init = False
+                        return '{}{}'.format(line[2:], '\n')
 
                 await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
             self._verbose and print('Read client disconnected: closing connection.')
@@ -245,7 +235,7 @@ class Connection:
                 await asyncio.sleep(TIM_TINY)
             buf = bytearray(init_str.encode('utf8'))
             start = time.time()
-            while self._sock is not None:
+            while self():
                 try:
                     d = self._sock.recv(4096)
                 except OSError as e:
@@ -262,105 +252,75 @@ class Connection:
                     start = time.time()  # Something was received
                     if self._rd_wait:  # 1st item after (re)start
                         self._rd_wait = False  # Enable write after delay
+                        self._loop.create_task(self._client_active())
                     if d == b'':  # Reset by peer
                         self._close()
                     buf.extend(d)
                     l = bytes(buf).decode().split('\n')
                     if len(l) > 1:  # Have at least 1 newline
                         last = l.pop()  # If not '' it's a partial line
-                        self._lines.extend(await self._convert_and_acks([x for x in l if x]))  # Discard ka's
+                        l = [x for x in l if x]  # Discard ka's
+                        # Separate reponses into lines and ACKs
+                        self._rxacks.update([int(x, 16) for x in l if len(x) == 2])
+                        l = [x for x in l if len(x) != 2]  # Lines received
+                        self._lines.extend(l)
                         buf = bytearray(last.encode('utf8')) if last else bytearray()
-
-    async def _convert_and_acks(self, lines):
-        ret = []
-        for i in range(0, len(lines)):  # should actually always have only one entry
-            line = lines[i]
-            if len(line):  # Ignore keepalives
-                # Discard dupes: get message ID
-                preheader = bytearray(ubinascii.unhexlify(line[:10].encode()))
-                mid = preheader[0]
-                if preheader[4] == 0x2C:  # ACK
-                    self._ack_mid = mid
-                    print("Got ACK mid", mid)
-                    continue
-                if mid != self._recv_mid:
-                    if preheader[1] != 0:
-                        header = bytearray(ubinascii.unhexlify(line[10:10 + preheader[1] * 2].encode()))
-                        line = line[10 + preheader[1] * 2:]
-                    else:
-                        header = None
-                        line = line[10:]
-                    print("Got message", preheader, header, line)
-                    ret.append((header, line))  # API change, also line is not new-line terminated
-                else:
-                    print("Dumped dupe mid", mid)
-                if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
-                    preheader[1] = preheader[2] = preheader[3] = 0
-                    preheader[4] = 0x2C  # ACK
-                    fstr = "{}\n"
-                    buf = fstr.format(ubinascii.hexlify(preheader).decode())
-                    await self._vwrite(buf, qos=False, mid=preheader[0])
-                    # ACK does not get qos as server will resend message if outage occurs
-        return ret
+                        for line in l:
+                            await self._vwrite(line[0:2])  # Send ACK
 
     async def _keepalive(self):
         while True:
-            await self._vwrite(None, mid=None, qos=False)
+            await self._vwrite(None)
             await asyncio.sleep(self._tim_ka)
 
-    async def write(self, header, buf, qos=True):
-        if header is not None:
-            if type(header) != bytearray:
-                raise TypeError("Header has to be bytearray")
-        if len(buf) > 65535:
-            raise ValueError("Message longer than 65535")
-        preheader = bytearray(5)
-        preheader[0] = next(self._getmid)
-        preheader[1] = 0 if header is None else len(header)
-        preheader[2] = len(buf) & 0xFF
-        preheader[3] = (len(buf) >> 8) & 0xFF  # allows for 65535 message length
-        preheader[4] = 0  # special internal usages, e.g. for esp_link
-        if qos:
-            preheader[4] |= 0x01  # qos==True, request ACK
-        mid = preheader[0]
-        preheader = ubinascii.hexlify(preheader).decode()
-        while self._tx_mid + 1 != mid:
-            await asyncio.sleep(0.05)
-        fstr = "{}{}{}" if buf.endswith("\n") else "{}{}{}\n"
-        buf = fstr.format(preheader, "" if header is None else ubinascii.hexlify(header).decode(), buf)
-        await self._vwrite(buf, mid, qos)
-        self._tx_mid += 1
-        self._verbose and print('Sent data', buf)
-
-    async def _vwrite(self, buf, mid, qos):  # Verbatim write: add no message ID
-        if buf is None:
-            print("vwrite", buf, mid, qos)
+    # qos>0 Repeat tx if outage occurred after initial tx (1st may have been lost)
+    async def _do_qos(self, mid, buf):
         while True:
-            ok = False
-            while not ok:
-                if self._verbose and self._sock is None:
-                    print('Writer Client:', self._cl_id, 'awaiting OK status')
-                while self._sock is None:
-                    await asyncio.sleep(0.05)
-                if buf is None:
-                    buf = '\n'  # Keepalive. Send now: don't care about loss
+            while not self():  # Wait for outage to clear
+                await asyncio.sleep(self._tim_short)
+            tstart = utime.time()  # Wait for ACK
+            while mid not in self._rxacks:
+                await asyncio.sleep(self._tim_short)
+                if not self() or (time.time() - tstart) > self._to_secs):
+                    break  # Outage or no ACK received: retransmit
+            else:
+                self._rxacks.remove(mid)
+                break  # ACK received, all done
+            await self._vwrite(buf)  # Waits for outage to clear
+            self._verbose and print('Repeat', buf, 'to server app')
 
-                async with self._wlock:  # >1 writing task?
-                    ok = await self._send(buf)  # Fail clears status
-            if qos:
-                end = time.time() + self._to_secs
-                while self._ack_mid != mid and time.time() < end:
-                    await asyncio.sleep(0.05)
-                if self._ack_mid != mid:
-                    self._verbose and print("Timeout or ack mid mismatch, closing connection")
-                    self._close()
-                    await asyncio.sleep(1)
-                    continue
-            break
+    async def write(self, line, pause=True, qos=True):
+        fstr =  '{:02x}{}' if line.endswith('\n') else '{:02x}{}\n'
+        mid = next(getmid)
+        buf = fstr.format(mid, line)  # Local copy
+        end = time.time() + self._to_secs
+        await self._vwrite(buf)
+        # Ensure qos by conditionally repeating the message
+        if qos:
+            self._loop.create_task(self._do_qos(mid, buf))
+        if pause:  # Throttle rate of non-keepalive messages
+            dt = end - time.time()
+            if dt > 0:
+                await asyncio.sleep(dt)  # Control tx rate: <= 1 msg per timeout period
+
+    async def _vwrite(self, buf):  # Verbatim write: add no message ID
+        ok = False
+        while not ok:
+            if self._verbose and not self():
+                print('Writer Client:', self._cl_id, 'awaiting OK status')
+            await self._status_coro()
+            if buf is None:
+                buf = '\n'  # Keepalive. Send now: don't care about loss
+            else:  # Check if client is ready after initial or subsequent
+                while self._wr_pause:
+                    await asyncio.sleep(self._tim_short)
+
+            async with self._wlock:  # >1 writing task?
+                ok = await self._send(buf)  # Fail clears status
 
     # Send a string as bytes. Return True on apparent success, False on failure.
     async def _send(self, d):
-        if self._sock is None:
+        if not self():
             return False
         d = d.encode('utf8')
         start = time.time()
@@ -385,12 +345,10 @@ class Connection:
         return Connection._conns[client_id]
 
     def _close(self):
-        self._init_ack_sent = False
         if self._sock is not None:
             self._verbose and print('fail detected')
             self._sock.close()
             self._sock = None
-
 
 # API aliases
 client_conn = Connection.client_conn
