@@ -45,7 +45,7 @@ class Client:
         gc.collect()
 
         self._evfail = Event(100)  # 100ms pause
-        self._evread = Event(100)
+        self._evread = Event()  # Respond fast to incoming
         self._evsend = Event(100)
         self._wrlock = Lock(100)
         self._lock = Lock(100)
@@ -53,6 +53,7 @@ class Client:
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
         self._ok = False  # Set after 1st successful read
+        self._rxmid0 = False  # Set if mid == 0 received after server reboot
         gc.collect()
         loop.create_task(self._run(loop))
 
@@ -123,7 +124,7 @@ class Client:
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
         self._verbose and print('Connecting to WiFi')
-        s.connect()
+        s.connect()  # Kevin: OSError trapping needed here?
         # Break out on fail or success.
         while s.status() == network.STAT_CONNECTING:
             await asyncio.sleep(1)
@@ -138,7 +139,7 @@ class Client:
         # that link. On fail, .bad_wifi() allows for user recovery.
         await asyncio.sleep(1)  # Didn't always start after power up
         s = self._sta_if
-        s.connect()
+        s.connect()  # Kevin: OSError trapping needed here?
         for _ in range(4):
             await asyncio.sleep(1)
             if s.isconnected():
@@ -206,10 +207,16 @@ class Client:
                 # mid == 0 : Server has power cycled
                 if not mid:
                     isnew(-1)  # Clear down rx message record
+                    if self._rxmid0:  # Server was reset previously
+                        isnew(0)  # and user got msg. Disallow dupe.
                 # _init : client has restarted. mid == 0 server power up
-                if not mid or isnew(mid):
+                if isnew(mid):
                     # Read succeeded: flag .readline
                     self._evread.set(line[2:].decode())
+                    # Kevin: this logic is flawed at present because messages
+                    # can be out of order. However with ACK's I think OO
+                    # messages can be prevented
+                    self._rxmid0 = mid == 0  # mid == 0 was sent to user
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:

@@ -155,7 +155,6 @@ class Connection:
         self._tim_ka = self._to_secs / 2  # Keepalive interval
         self._sock = c_sock  # Socket
         self._cl_id = client_id
-        self._init = True  # Server power-up
         self._verbose = verbose
         Connection._conns[client_id] = self
         try:
@@ -172,6 +171,8 @@ class Connection:
         self._getmid = gmid()  # Generator for message ID's
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
+        self._rxmid0 = False  # Set if mid == 0 received after client reboot
+
         loop.create_task(self._read(init_str))
         loop.create_task(self._keepalive())
 
@@ -217,9 +218,13 @@ class Connection:
                     # mid == 0 : client has power cycled
                     if not mid:
                         isnew(-1)
-                    # _init : server has powered up
-                    if self._init or not mid or isnew(mid):
-                        self._init = False
+                        if self._rxmid0:  # Client was reset previously
+                            isnew(0)  # and user got msg. Disallow dupe.
+                    if isnew(mid):
+                        # Kevin: this logic is flawed at present because messages
+                        # can be out of order. However with ACK's I think OO
+                        # messages can be prevented
+                        self._rxmid0 = mid == 0  # mid == 0 was sent to user
                         return '{}{}'.format(line[2:], '\n')
 
                 await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
