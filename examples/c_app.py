@@ -5,8 +5,10 @@
 
 import gc
 import uasyncio as asyncio
+
 gc.collect()
 from micropython_iot import client
+
 gc.collect()
 import ujson
 # Optional LED. led=None if not required
@@ -20,6 +22,7 @@ else:
 # End of optionalLED
 
 from . import local
+
 gc.collect()
 
 
@@ -29,12 +32,31 @@ class App(client.Client):
         self.cl = client.Client(loop, local.MY_ID, local.SERVER, local.SSID, local.PW,
                          conn_cb=self.constate, verbose=verbose, led=led, wdog=False)
         loop.create_task(self.start(loop))
+        self.latency_added = 0
+        self.count = 0
 
     async def start(self, loop):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        loop.create_task(self.reader())
-        loop.create_task(self.writer())
+        loop.create_task(self.rreader())
+        loop.create_task(self.wwriter())
+
+    async def rreader(self):
+        import utime
+        while True:
+            header, line = await self.cl.readline()
+            data = ujson.loads(line)
+            latency = utime.ticks_ms() - data[0]
+            self.latency_added += latency
+            self.count += 1
+            print("Latency:", latency, "Avg Latency:", self.latency_added / self.count)
+
+    async def wwriter(self):
+        import utime
+        while True:
+            await asyncio.sleep(1)
+            data = [utime.ticks_ms()]
+            await self.cl.write(None, ujson.dumps(data))
 
     def constate(self, state):
         print("Connection state:", state)
@@ -44,10 +66,10 @@ class App(client.Client):
         while True:
             # Attempt to read data: in the event of an outage, .readline()
             # pauses until the connection is re-established.
-            line = await self.cl.readline()
+            header, line = await self.cl.readline()
             data = ujson.loads(line)
             # Receives [restart count, uptime in secs]
-            print('Got', data, 'from server app')
+            print('Got', header, data, 'from server app')
 
     # Send [approx application uptime in secs, (re)connect count]
     async def writer(self):
@@ -62,7 +84,7 @@ class App(client.Client):
             data[2] = gc.mem_free()
             print('Sent', data, 'to server app\n')
             # .write() behaves as per .readline()
-            await self.cl.write(ujson.dumps(data))
+            await self.cl.write(None, ujson.dumps(data))
             await asyncio.sleep(5)
 
     def shutdown(self):

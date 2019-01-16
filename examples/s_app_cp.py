@@ -21,6 +21,7 @@ except ImportError:
     import ujson as json
 
 from micropython_iot import server
+from .local import PORT, TIMEOUT
 
 
 class App:
@@ -39,10 +40,15 @@ class App:
     async def reader(self):
         print('Started reader')
         while True:
-            line = await self.conn.readline()  # Pause in event of outage
-            self.data = json.loads(line)
+            header, line = await self.conn.readline()  # Pause in event of outage
+            try:
+                self.data = json.loads(line)
+            except json.JSONDecodeError:
+                print("Error converting {!s} {!s}".format(header, line))
+                continue
             # Receives [restart count, uptime in secs, mem_free]
-            print('Got', self.data, 'from remote', self.client_id)
+            print('Got', header, self.data, 'from remote', self.client_id)
+            await self.conn.write(None, json.dumps(self.data))
 
     # Send
     # [approx app uptime in secs/5, received client uptime, received mem_free]
@@ -54,7 +60,7 @@ class App:
             count += 1
             print('Sent', self.data, 'to remote', self.client_id, '\n')
             # .write() behaves as per .readline()
-            await self.conn.write(json.dumps(self.data))
+            await self.conn.write(None, json.dumps(self.data))
             await asyncio.sleep(5)
 
 
@@ -63,7 +69,7 @@ def run():
     clients = {'1', '2', '3', '4'}
     apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, clients, True))
+        loop.run_until_complete(server.run(loop, clients, True, PORT, TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
