@@ -30,6 +30,9 @@ else:
     import errno
     Lock = asyncio.Lock
 
+from . import gmid
+getmid = gmid()  # Message ID generator
+
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
 # Read the node ID. There isn't yet a Connection instance.
@@ -155,7 +158,6 @@ class Connection:
         self._tim_ka = self._to_secs / 2  # Keepalive interval
         self._sock = c_sock  # Socket
         self._cl_id = client_id
-        self._init = True  # Server power-up
         self._verbose = verbose
         Connection._conns[client_id] = self
         try:
@@ -172,7 +174,7 @@ class Connection:
         self._getmid = gmid()  # Generator for message ID's
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
-        self._rxacks = set()  # Received ACKs pending checking
+        self._acks_pend = set()  # ACKs which are expected to be received
         loop.create_task(self._read(init_str))
         loop.create_task(self._keepalive())
 
@@ -218,9 +220,7 @@ class Connection:
                     # mid == 0 : client has power cycled
                     if not mid:
                         isnew(-1)
-                    # _init : server has powered up
-                    if self._init or not mid or isnew(mid):
-                        self._init = False
+                    if isnew(mid):
                         return '{}{}'.format(line[2:], '\n')
 
                 await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
@@ -261,47 +261,55 @@ class Connection:
                         last = l.pop()  # If not '' it's a partial line
                         l = [x for x in l if x]  # Discard ka's
                         # Separate reponses into lines and ACKs
-                        self._rxacks.update([int(x, 16) for x in l if len(x) == 2])
+                        acks = {int(x, 16) for x in l if len(x) == 2}
+                        if len(acks):
+#                            self._verbose and print('._rxacks=', self._acks_pend, 'acks=', acks)
+                            for ack in acks:
+                                self._acks_pend.discard(ack)
                         l = [x for x in l if len(x) != 2]  # Lines received
-                        self._lines.extend(l)
-                        buf = bytearray(last.encode('utf8')) if last else bytearray()
-                        for line in l:
-                            await self._vwrite(line[0:2])  # Send ACK
+                        if len(l):
+                            self._lines.extend(l)
+                            buf = bytearray(last.encode('utf8')) if last else bytearray()
+                            for line in l:
+                                self._loop.create_task(self._sendack(int(line[0:2], 16)))
+
+    async def _sendack(self, mid):
+        async with self._wlock:
+            await self._send('{:02x}\n'.format(mid))
 
     async def _keepalive(self):
         while True:
             await self._vwrite(None)
             await asyncio.sleep(self._tim_ka)
 
-    # qos>0 Repeat tx if outage occurred after initial tx (1st may have been lost)
+    async def write(self, line, qos=True):
+        fstr =  '{:02x}{}' if line.endswith('\n') else '{:02x}{}\n'
+        mid = next(getmid)
+        self._acks_pend.add(mid)
+        buf = fstr.format(mid, line)  # Local copy
+        end = time.time() + self._to_secs
+        await self._vwrite(buf)
+        if qos:
+            self._loop.create_task(self._do_qos(mid, buf))
+
+    # qos==2 Retransmit until matching ACK received
     async def _do_qos(self, mid, buf):
         while True:
             while not self():  # Wait for outage to clear
                 await asyncio.sleep(self._tim_short)
-            tstart = utime.time()  # Wait for ACK
-            while mid not in self._rxacks:
-                await asyncio.sleep(self._tim_short)
-                if not self() or (time.time() - tstart) > self._to_secs):
-                    break  # Outage or no ACK received: retransmit
-            else:
-                self._rxacks.remove(mid)
-                break  # ACK received, all done
+            if await self._waitack(mid, self._to_secs):  # How long before retransmit?
+                return  # Got ack, removed from list, all done
             await self._vwrite(buf)  # Waits for outage to clear
             self._verbose and print('Repeat', buf, 'to server app')
 
-    async def write(self, line, pause=True, qos=True):
-        fstr =  '{:02x}{}' if line.endswith('\n') else '{:02x}{}\n'
-        mid = next(getmid)
-        buf = fstr.format(mid, line)  # Local copy
-        end = time.time() + self._to_secs
-        await self._vwrite(buf)
-        # Ensure qos by conditionally repeating the message
-        if qos:
-            self._loop.create_task(self._do_qos(mid, buf))
-        if pause:  # Throttle rate of non-keepalive messages
-            dt = end - time.time()
-            if dt > 0:
-                await asyncio.sleep(dt)  # Control tx rate: <= 1 msg per timeout period
+    async def _waitack(self, mid, t):
+        tstart = time.time()  # Wait for ACK
+        while mid in self._acks_pend:  # Removed by ._read
+            await asyncio.sleep(TIM_TINY)
+            if not self() or ((time.time() - tstart) > t):
+                self._verbose and print('waitack timeout', mid)
+                return False  # No ACK received in time
+        return True
 
     async def _vwrite(self, buf):  # Verbatim write: add no message ID
         ok = False
