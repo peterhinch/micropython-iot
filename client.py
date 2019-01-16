@@ -1,7 +1,7 @@
 # client.py Client class for resilient asynchronous IOT communication link.
 
 # Released under the MIT licence.
-# Copyright (C) Peter Hinch, Kevin Köck 2018
+# Copyright (C) Peter Hinch, Kevin Köck 2019
 
 # After sending ID now pauses before sending further data to allow server to
 # initiate read task.
@@ -11,10 +11,13 @@ import gc
 gc.collect()
 import usocket as socket
 import uasyncio as asyncio
+
 gc.collect()
 
 import network
+import errno
 import utime
+import ubinascii
 
 gc.collect()
 from . import gmid, isnew, launch, Event, Lock, SetByte  # __init__.py
@@ -27,7 +30,7 @@ class Client:
                  connected_cb=None, connected_cb_args=None,
                  verbose=False, led=None):
         self._loop = loop
-        self._my_id = my_id if my_id.endswith('\n') else '{}{}'.format(my_id, '\n')
+        self._my_id = my_id
         self._server = server
         self._port = port
         self._to = timeout  # Client and server timeout
@@ -45,12 +48,15 @@ class Client:
         gc.collect()
 
         self._evfail = Event(100)  # 100ms pause
-        self._evread = Event()  # Respond fast to incoming
-        self._s_lock = Lock(100)  # For internal send conflict.
+        self._evread = Event() # Respond fast to incoming
+        self._lock = Lock(100)
 
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
         self._ok = False  # Set after 1st successful read
+
+        self._tx_mid = 0  # sent mid +1, used for keeping messages in order
+        self._recv_mid = -1  # last received mid, used for deduping as message can't be out-of-order
         self._acks_pend = SetByte()  # ACKs which are expected to be received
         gc.collect()
         loop.create_task(self._run(loop))
@@ -67,19 +73,39 @@ class Client:
 
     async def readline(self):
         await self._evread
-        d = self._evread.value()
+        h, d = self._evread.value()
         self._evread.clear()
-        return d
+        return h, d
 
-    async def write(self, buf, qos=True):
-        # Prepend message ID to a copy of buf
-        fstr =  '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
+    async def write(self, header, buf, qos=True):
+        """
+        Send a new message
+        :param header: optional user header, make sure it does not get modified
+        :param buf: string/byte, message to be sent
+        after sending as it is passed by reference
+        :param qos: bool
+        :return:
+        """
+        if len(buf) > 65535:
+            raise ValueError("Message longer than 65535")
         mid = next(getmid)
-        self._acks_pend.add(mid)
-        buf = fstr.format(mid, buf)
-        await self._write(buf)
-        if qos:  # Return when an ACK received
-            await self._do_qos(mid, buf)
+        preheader = bytearray(5)
+        preheader[0] = mid
+        preheader[1] = 0 if header is None else len(header)
+        preheader[2] = len(buf) & 0xFF - (1 if buf.endswith("\n") else 0)
+        preheader[3] = (len(buf) >> 8) & 0xFF  # allows for 65535 message length
+        preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
+        if qos:
+            preheader[4] |= 0x01  # qos==True, request ACK
+        preheader = ubinascii.hexlify(preheader)
+        if header is not None:
+            if type(header) != bytearray:
+                raise TypeError("Header has to be bytearray")
+            else:
+                header = ubinascii.hexlify(header)
+        while self._tx_mid != mid or self._ok is False: # keeps order even with multiple writes
+            await asyncio.sleep_ms(50)  # wait until the mid is scheduled to be sent, keeps messages in order
+        await self._write(preheader, header, buf, qos, mid)
 
     def close(self):
         self._verbose and print('Closing sockets.')
@@ -98,44 +124,53 @@ class Client:
 
     # **** API end ****
 
-    async def _write(self, line):
-        tshort = self._tim_short
+    async def _write(self, preheader, header, buf, qos, mid, ack=False):
+        if buf is None:
+            buf = b""
         while True:
             # After an outage wait until something is received from server
             # before we send.
             while not self._ok:
-                await asyncio.sleep_ms(tshort)
-            try:
-                async with self._s_lock:
-                    await self._send(line)
-                return
-            except OSError:
-                pass
-
-            self._evfail.set('writer fail')
-            # Wait for a response to _evfail
-            while self._ok:
-                await asyncio.sleep_ms(tshort)
-
-    # Handle qos. Retransmit until matching ACK received.
-    # ACKs typically take 200-400ms to arrive.
-    async def _do_qos(self, mid, line):
-        nms100 = 10  # Hundreds of ms to wait for ACK 
-        while True:
-            while not self._ok:  # Wait for any outage to clear
                 await asyncio.sleep_ms(self._tim_short)
-            for _ in range(nms100):
-                await asyncio.sleep_ms(100)  # Wait for an ACK (how long?)
-                if mid not in self._acks_pend:
-                    return  # ACK was received
-            if self._ok:
-                await self._write(line)
-                self._verbose and print('Repeat', line, 'to server app')
+            try:
+                async with self._lock:
+                    if ack is False:
+                        self._acks_pend.add(mid)
+                    await self._send(preheader)
+                    if header is not None:
+                        await self._send(header)
+                    await self._send(buf)
+                    if buf.endswith("\n") is False:
+                        await self._send(b"\n")
+                self._verbose and print('Sent data', preheader, header, buf, qos)
+            except OSError:
+                self._evfail.set('writer fail')
+                # Wait for a response to _evfail
+                while self._ok:
+                    await asyncio.sleep_ms(self._tim_short)
+                continue
+            if ack is False:
+                self._tx_mid += 1  # allows next write to start before receiving ACK
+                if self._tx_mid == 256:
+                    self._tx_mid = 1
+            if qos is False:
+                return True
+            else:
+                st = utime.ticks_ms()
+                while mid in self._acks_pend and utime.ticks_diff(utime.ticks_ms(), st) < self._to:
+                    await asyncio.sleep_ms(50)
+                if mid in self._acks_pend:  # wait for ACK for one timeout period
+                    print(utime.ticks_ms(), "ack not received")
+                    self._evfail.set('timeout ACK')  # timeout, reset connection and try again
+                    while self._ok:
+                        await asyncio.sleep_ms(self._tim_short)
+                    continue
+                return True
 
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
         self._verbose and print('Connecting to WiFi')
-        s.connect()  # Kevin: OSError trapping needed here?
+        s.connect()
         # Break out on fail or success.
         while s.status() == network.STAT_CONNECTING:
             await asyncio.sleep(1)
@@ -169,14 +204,27 @@ class Client:
                 serv = socket.getaddrinfo(self._server, self._port)[0][-1]  # server read
                 # If server is down OSError e.args[0] = 111 ECONNREFUSED
                 self._sock.connect(serv)
-                self._sock.setblocking(False)
-                # Start reading before server can send: can't send until it
-                # gets ID.
-                loop.create_task(_reader)
-                # Server reads ID immediately, but a brief pause is probably wise.
-                await asyncio.sleep_ms(50)
-                # No need for lock yet.
-                await self._send(self._my_id)  # Can throw OSError
+            except OSError as e:
+                if e.args[0] in (errno.ECONNABORTED, errno.ECONNRESET, errno.ECONNREFUSED):
+                    if init:
+                        await self.bad_server()
+                    continue  # temporary server outage?
+            self._sock.setblocking(False)
+            # Start reading before server can send: can't send until it
+            # gets ID.
+            loop.create_task(_reader)
+            # Server reads ID immediately, but a brief pause is probably wise.
+            await asyncio.sleep_ms(50)
+            preheader = bytearray(5)
+            preheader[0] = 0x2C  # mid but in this case protocol identifier but will receive an ACK with mid 0x2C
+            preheader[1] = 0  # header length
+            preheader[2] = len(self._my_id) & 0xFF
+            preheader[3] = (len(self._my_id) >> 8) & 0xFF  # allows for 65535 message length
+            preheader[4] = 0xFF  # clean connection, shows if device has been reset or just a wifi outage
+            preheader = ubinascii.hexlify(preheader)
+            # No need for lock yet.
+            try:
+                await self._write(preheader, None, self._my_id, True, 0x2C)
             except OSError:
                 if init:
                     await self.bad_server()
@@ -191,15 +239,17 @@ class Client:
                 self._ok = False
                 asyncio.cancel(_reader)
                 asyncio.cancel(_keepalive)
-                await asyncio.sleep(1)  # wait for cancellation
                 if self._concb is not None:
                     # apps might need to know if they lost connection to the server
                     launch(self._concb, False, *self._concbargs)
+                await asyncio.sleep(1)  # wait for cancellation but notify application before
             finally:
-                init = False
+                init=False
                 self.close()  # Close socket
                 s.disconnect()
-                await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage
+                # await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage.
+                # server should detect outage if client reconnects or no ACKs are received in qos.
+                # Also reconnect takes 3s which is more than enough.
                 while s.isconnected():
                     await asyncio.sleep(1)
 
@@ -208,35 +258,37 @@ class Client:
         self._evread.clear()  # No data read yet
         try:
             while True:
-                line = await self._readline()  # OSError on fail
-                mid = int(line[0:2], 16)
-                if len(line) == 3:  # Got ACK: remove from expected list
-                    self._acks_pend.discard(mid)  # qos0 acks are ignored
-                    continue  # All done
+                preheader, header, line = await self._readline()  # OSError on fail
+                print("Got", preheader, header, line)
+                # Discard dupes
+                mid = preheader[0]
+                if preheader[4] == 0x2C:  # ACK
+                    print("Got ack mid", mid)
+                    self._acks_pend.discard(mid)
+                    continue # All done
                 # Old message still pending. Discard new one peer will re-send.
                 if self._evread.is_set():
+                    self._verbose and print("Dumping new message", self._evread.value())
                     continue
-                # Message received & can be passed to user: send ack.
-                self._loop.create_task(self._sendack(mid))
-                # Discard dupes. mid == 0 : Server has power cycled
                 if not mid:
-                    isnew(-1)  # Clear down rx message record
+                    isnew(-1)
                 if isnew(mid):
-                    self._evread.set(line[2:].decode())
+                    self._evread.set((header, line))
+                if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
+                    preheader[1] = preheader[2] = preheader[3] = 0
+                    preheader[4] = 0x2C  # ACK
+                    await self._write(ubinascii.hexlify(preheader), None, None, qos=False, mid=preheader[0], ack=True)
+                    # ACK does not get qos as server will resend message if outage occurs
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
             self._evfail.set('reader fail')  # ._run cancels other coros
 
-    async def _sendack(self, mid):
-        async with self._s_lock:
-            await self._send('{:02x}\n'.format(mid))
-
     async def _keepalive(self):
         try:
             while True:
                 await asyncio.sleep_ms(self._tim_ka)
-                async with self._s_lock:
+                async with self._lock:
                     await self._send(b'\n')
         except OSError:
             self._evfail.set('keepalive fail')
@@ -245,26 +297,70 @@ class Client:
     # are joined into a line. Blank lines are keepalive packets which reset
     # the timeout: _readline() pauses until a complete line has been received.
     async def _readline(self):
-        line = b''
+        line = None
+        preheader = None
+        header = None
         start = utime.ticks_ms()
         while True:
-            if line.endswith(b'\n'):
-                self._ok = True  # Got at least 1 packet
-                if len(line) > 1:
-                    return line
-                line = b''
+            if preheader is None:
+                cnt = 10
+            elif header is None and preheader[1] != 0:
+                cnt = preheader[1] * 2
+            elif line is None:
+                cnt = (preheader[3] << 8) | preheader[2]
+                if cnt == 0:
+                    line = b""
+                    cnt = 1  # new-line termination missing
+            else:
+                cnt = 1  # only newline-termination missing
+            d = await self._read_small(cnt, start)
+            # d is not None and print("read small got", d, cnt)
+            if d is None:
+                if line is not None:
+                    return preheader, header, line.decode()
+                line = None
+                preheader = None
+                header = None
                 start = utime.ticks_ms()  # Blank line is keepalive
                 if self._led is not None:
                     self._led(not self._led())
-            d = self._sock.readline()
+                continue
+            if preheader is None:
+                preheader = bytearray(ubinascii.unhexlify(d))
+            elif header is None and preheader[1] != 0:
+                header = bytearray(ubinascii.unhexlify(d))
+            elif line is None:
+                line = d
+            else:
+                raise OSError  # got unexpected characters instead of \n
+
+    async def _read_small(self, cnt, start):
+        m = b''
+        rcnt = cnt
+        while True:
+            try:
+                d = self._sock.recv(rcnt)
+            except OSError as e:
+                if e.args[0] == errno.EAGAIN:
+                    await asyncio.sleep_ms(25)
+                    continue
+                else:
+                    raise OSError
             if d == b'':
                 raise OSError
             if d is None:  # Nothing received: wait on server
-                await asyncio.sleep_ms(100)
-            elif line == b'':
-                line = d
+                await asyncio.sleep_ms(25)
+            elif d == b"\n":
+                return None  # either EOF or keepalive
+            elif d.startswith(b"\n"):
+                d = d[1:]
+                m = b''.join((m, d))
             else:
-                line = b''.join((line, d))
+                m = b''.join((m, d))
+            if len(m) == cnt:
+                return m
+            else:
+                rcnt = cnt - len(m)
             if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
                 raise OSError
 
