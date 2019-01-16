@@ -30,8 +30,25 @@ class App:
     async def start(self, loop):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        loop.create_task(self.reader())
-        loop.create_task(self.writer())
+        loop.create_task(self.rreader())
+        loop.create_task(self.wwriter())
+
+    async def rreader(self):
+        import utime
+        while True:
+            header, line = await self.cl.readline()
+            data = ujson.loads(line)
+            latency = utime.ticks_ms() - data[0]
+            self.latency_added += latency
+            self.count += 1
+            print("Latency:", latency, "Avg Latency:", self.latency_added / self.count)
+
+    async def wwriter(self):
+        import utime
+        while True:
+            await asyncio.sleep(1)
+            data = [utime.ticks_ms()]
+            await self.cl.write(None, ujson.dumps(data))
 
     def constate(self, state):
         print("Connection state:", state)
@@ -48,7 +65,6 @@ class App:
 
     # Send [approx application uptime in secs, (re)connect count]
     async def writer(self):
-        import utime
         self.verbose and print('Started writer')
         data = [0, 0, 0]
         count = 0
@@ -60,13 +76,8 @@ class App:
             data[2] = gc.mem_free()
             print('Sent', data, 'to server app\n')
             # .write() behaves as per .readline()
-            st = utime.ticks_ms()
             await self.cl.write(None, ujson.dumps(data))
-            latency = utime.ticks_ms() - st
-            self.latency_added += latency
-            self.count += 1
-            print("Latency:", latency, "Avg Latency:", self.latency_added / self.count)
-            # await asyncio.sleep(5)
+            await asyncio.sleep(5)
 
     def close(self):
         self.cl.close()
