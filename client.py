@@ -101,16 +101,11 @@ class Client:
     # **** API end ****
 
     # qos==2 Retransmit until matching ACK received
-    # At the moment out-of-order messages are prevented by stringent flow control.
-    # If we relax this to allow multiple messages to be waiting on ACKs, redesign
-    # as a continuously running coro processing a resend_list. This would enable
-    # resends to be processed in order, with each message waiting on its own ACK
-    # before the next is re-sent.
     async def _do_qos(self, mid, line):
         while True:
             while not self._ok:  # Wait for any outage to clear
                 await asyncio.sleep_ms(self._tim_short)
-            if await self._waitack(mid, 350):  # How long before retransmit ???
+            if await self._waitack(mid, self._to):  # How long before retransmit ???
                 return  # Got ack, removed from list, all done
             await self._do_write(line)
             self._verbose and print('Repeat', line, 'to server app')

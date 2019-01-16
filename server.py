@@ -174,7 +174,6 @@ class Connection:
         self._getmid = gmid()  # Generator for message ID's
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
-        self._rxmid0 = False  # Set if mid == 0 received after client reboot
         self._acks_pend = set()  # ACKs which are expected to be received
         loop.create_task(self._read(init_str))
         loop.create_task(self._keepalive())
@@ -221,13 +220,7 @@ class Connection:
                     # mid == 0 : client has power cycled
                     if not mid:
                         isnew(-1)
-                        if self._rxmid0:  # Client was reset previously
-                            isnew(0)  # and user got msg. Disallow dupe.
                     if isnew(mid):
-                        # Kevin: this logic is flawed at present because messages
-                        # can be out of order. However with ACK's I think OO
-                        # messages can be prevented
-                        self._rxmid0 = mid == 0  # mid == 0 was sent to user
                         return '{}{}'.format(line[2:], '\n')
 
                 await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
@@ -304,7 +297,7 @@ class Connection:
         while True:
             while not self():  # Wait for outage to clear
                 await asyncio.sleep(self._tim_short)
-            if await self._waitack(mid, 0.35):  # How long before retransmit? 0.2 gave resends
+            if await self._waitack(mid, self._to_secs):  # How long before retransmit?
                 return  # Got ack, removed from list, all done
             await self._vwrite(buf)  # Waits for outage to clear
             self._verbose and print('Repeat', buf, 'to server app')
