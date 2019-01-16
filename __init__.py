@@ -10,6 +10,7 @@ except ImportError:
 
 type_gen = type((lambda: (yield))())  # Generator type
 
+
 # If a callback is passed, run it and return.
 # If a coro is passed initiate it and return.
 # coros are passed by name i.e. not using function call syntax.
@@ -28,6 +29,8 @@ def gmid():
         mid = (mid + 1) & 0xff
         mid = mid if mid else 1
 
+
+"""
 # Return True if a message ID has not already been received
 def isnew(mid, lst=bytearray(32)):
     if mid == -1:
@@ -40,6 +43,7 @@ def isnew(mid, lst=bytearray(32)):
     lst[idx] |= bit
     lst[(idx + 16 & 0x1f)] = 0
     return res
+"""
 
 
 class Lock:
