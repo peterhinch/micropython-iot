@@ -111,7 +111,6 @@ class Client:
         self._sock = None
         self._ok = False  # Set after 1st successful read
 
-        self._ack_mid = -1  # last received ACK mid
         self._tx_mid = 0  # sent mid +1, used for keeping messages in order
         self._recv_mid = -1  # last received mid, used for deduping as message can't be out-of-order
         self._acks_pend = SetByte()  # ACKs which are expected to be received
@@ -213,15 +212,18 @@ class Client:
                 return True
         return False
 
-    async def _write(self, preheader, header, buf, qos, mid, init=False):
+    async def _write(self, preheader, header, buf, qos, mid, ack=False):
         if buf is None:
             buf = b""
         while True:
-            while not self._ok and init is False:
+            # After an outage wait until something is received from server
+            # before we send.
+            while not self._ok:
                 await asyncio.sleep_ms(self._tim_short)
-            # await asyncio.sleep_ms(self._to // 3)  # conservative, Really needed?
             try:
-                async with self._lock:
+                async with self._s_lock:
+                    if ack is False:
+                        self._acks_pend.add(mid)
                     await self._send(preheader)
                     if header is not None:
                         await self._send(header)
@@ -231,22 +233,25 @@ class Client:
                 self._verbose and print('Sent data', preheader, header, buf, qos)
             except OSError:
                 self._evfail.set('writer fail')
-                if init:
-                    return False  # otherwise reconnect does not work when sending id fails
+                # Wait for a response to _evfail
+                while self._ok:
+                    await asyncio.sleep_ms(self._tim_short)
                 continue
+            if ack is False:
+                self._tx_mid += 1  # allows next write to start before receiving ACK
+                if self._tx_mid == 256:
+                    self._tx_mid = 1
             if qos is False:
                 return True
             else:
                 st = utime.ticks_ms()
-                while self._ack_mid != mid and utime.ticks_diff(utime.ticks_ms(), st) < self._to:
+                while mid in self._acks_pend and utime.ticks_diff(utime.ticks_ms(), st) < self._to:
                     await asyncio.sleep_ms(50)
-                if self._ack_mid != mid:  # wait for ACK for one timeout period
+                if mid in self._acks_pend:  # wait for ACK for one timeout period
                     print(utime.ticks_ms(), "ack not received")
                     self._evfail.set('timeout ACK')  # timeout, reset connection and try again
-                    if init:
-                        print("init return false")
-                        return False
-                    await asyncio.sleep(1)  # wait until self._ok is False
+                    while self._ok:
+                        await asyncio.sleep_ms(self._tim_short)
                     continue
                 return True
 
@@ -364,18 +369,20 @@ class Client:
                 mid = preheader[0]
                 if preheader[4] == 0x2C:  # ACK
                     print("Got ack mid", mid)
-                    self._ack_mid = mid
+                    self._acks_pend.discard(mid)
+                    continue # All done
+                # Old message still pending. Discard new one peer will re-send.
+                if self._evread.is_set():
+                    self._verbose and print("Dumping new message", self._evread.value())
                     continue
-                if mid != self._recv_mid:
-                    # Read succeeded: flag .readline
-                    if self._evread.is_set():
-                        self._verbose and print("Dumping unread message", self._evread.value())
+                if not mid:
+                    isnew(-1)
+                if isnew(mid):
                     self._evread.set((header, line))
-                    self._recv_mid = mid
                 if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
                     preheader[1] = preheader[2] = preheader[3] = 0
                     preheader[4] = 0x2C  # ACK
-                    await self._write(ubinascii.hexlify(preheader), None, None, qos=False, mid=preheader[0])
+                    await self._write(ubinascii.hexlify(preheader), None, None, qos=False, mid=preheader[0], ack=True)
                     # ACK does not get qos as server will resend message if outage occurs
                 if c == self.connects:
                     self.connects += 1  # update connect count
