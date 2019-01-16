@@ -15,7 +15,6 @@ import uasyncio as asyncio
 gc.collect()
 from sys import platform
 import network
-import errno
 import utime
 import machine
 import errno
