@@ -12,6 +12,7 @@ from machine import Pin
 from . import local
 gc.collect()
 from micropython_iot import client
+import urandom
 
 
 class App:
@@ -31,7 +32,8 @@ class App:
         self.verbose and print('App awaiting connection.')
         await self.cl
         loop.create_task(self.reader())
-        loop.create_task(self.writer())
+        for _ in range(3):
+            loop.create_task(self.writer())
 
     async def reader(self):
         self.verbose and print('Started reader')
@@ -65,8 +67,8 @@ class App:
             self.tx_msg_id += 1
             print('Sent', data, 'to server app\n')
             dstr = ujson.dumps(data)
-            await self.cl.write(dstr)
-            await asyncio.sleep(5)
+            await self.cl.write(dstr)  # Wait out any outage
+            await asyncio.sleep_ms(7000 + urandom.getrandbits(10))
 
     def close(self):
         self.cl.close()

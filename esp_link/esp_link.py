@@ -109,7 +109,7 @@ class App:
             # If the following pauses for an outage, the Pyboard may write
             # one more line. Subsequent calls to channel.write pause pending
             # resumption of communication with the server.
-            await self.cl.write(line, pause=False, qos=True)
+            await self.cl.write(line, qos=True)
             self.verbose and print('Sent', line, 'to server app')
 
     async def from_server(self):

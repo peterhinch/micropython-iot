@@ -8,8 +8,7 @@ message loss.
 The API is simple and consistent between client and server applications,
 comprising `write` and `readline` methods.
 
-Thanks are due to Kevin Köck for numerous contributions of code, ideas and bug
-reports.
+This project is a collaboration between Peter Hinch and Kevin Köck.
 
 # 0. MicroPython IOT application design
 
@@ -21,7 +20,7 @@ reliability is therefore paramount. Security is also a factor for endpoints
 exposed to the internet.
 
 Under MicroPython the available hardware for endpoints is limited. At the time
-of writing (December 2018) the Pyboard D is not yet available. The ESP32 had
+of writing (January 2019) the Pyboard D is not yet available. The ESP32 had
 a fatal flaw which has [recently been fixed](https://github.com/micropython/micropython/issues/4269).
 I haven't yet had the time to establish its level of general resilience.
 
@@ -34,7 +33,7 @@ The approach advocated here simplifies writing resilient ESP8266 IOT
 applications by providing a communications channel with inherent resilience.
 
 The usual arrangement for MicroPython internet access is as below.
-![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram_orig.png)
+![Image](./images/block_diagram_orig.png)
 
 Running internet protocols on ESP8266 nodes has the following drawbacks:
  1. It can be difficult to ensure resilience in the face of outages of WiFi and
@@ -53,7 +52,7 @@ communicate using a simple protocol based on the exchange of lines of text. The
 server can run on a Linux box such as a Raspberry Pi; this can run 24/7 at
 minimal running cost.
 
-![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram.png)  
+![Image](./images/block_diagram.png)
 
 Benefits are:
  1. Security is handled on a device with an OS. Updates are easily accomplished.
@@ -81,8 +80,7 @@ such cases no internet protocol is required and the server side application
 merely passes data between nodes and/or logs data to disk.
 
 This architecture can be extended to non-networked clients such as the Pyboard.
-This is forthcoming and is described and diagrammed
-[here](./README.md#9-extension-to-the-pyboard).
+This described and diagrammed [here](./README.md#9-extension-to-the-pyboard).
 
 # 1. Contents
 
@@ -118,9 +116,9 @@ side application uses `server.py`.
 Messages are required to be complete lines of text. They typically comprise an
 arbitrary Python object encoded using JSON and terminated with a newline.
 
-There is no guarantee of delivery of a message. Techniques to overcome this are
-described in [section 7](./README.md#7-quality-of-service). Performance
-limitations are discussed in [section 8](./README.md#8-performance).
+Guaranteed message delivery is supported. This is described in
+[section 7](./README.md#7-quality-of-service). Performance limitations are
+discussed in [section 8](./README.md#8-performance).
 
 ## 2.1 Protocol
 
@@ -160,9 +158,12 @@ constants must be common to all clients and the server:
  2. `SERVER` IP address of local server PC.
  3. `TIMEOUT` In ms. Normally 1500. See sections 6 and 7.
  4. `CLIENT_ID` Associates an ESP8266 with its server-side application. Must be
- unique to each client. May be any `\n` terminated Python string.
- The client and server configuration is done using constructor arguments, 
- therefore `local.py` is imported in the example files and can be implemented differently. 
+ a string unique to each client.
+
+The client and server configuration is done using constructor arguments. In the
+example programs these are imported from `local.py` to ensure consistency
+between the two endpoints. Each demo has its own `local.py` which should be
+edited to match local conditions.
 
 ## 3.1 Installation
 
@@ -311,7 +312,7 @@ communication can begin. This is done using `Client.write` and
 `Client.readline` methods.
 
 Every client ha a unique ID (`MY_ID`) typically stored in `local.py`. The ID
-comprises a newline-terminated string.
+comprises a string subject to the same constraint as messages:
 
 Messages comprise a single line of text; if the line is not terminated with a
 newline ('\n') the client library will append it. Newlines are only allowed as
@@ -375,8 +376,10 @@ Constructor args:
  3. `server` The server IP-Adress to connect to.
  4. `port` The port the server listens on.
  5. `timeout` The timeout for connection, used for connection state detection.
- 6. `connected_cb` Callback or coroutine that is called whenever the connection changes
- 7. `connected_cb_args` Arguments that will be passed to the *connected_cb* callback. First argument however is always the state.
+ 6. `connected_cb` Callback or coroutine that is called whenever the connection
+ changes.
+ 7. `connected_cb_args` Arguments that will be passed to the *connected_cb*
+ callback. User args are preceeded by a `bool` indicating the state.
  8. `verbose=False` Provides optional debug output.
  9. `led=None` If a `Pin` instance is passed it will be toggled each time a
  keepalive message is received. Can provide a heartbeat LED if connectivity is
@@ -384,18 +387,15 @@ Constructor args:
 
 Methods (asynchrounous):
  1. `readline` No args. Pauses until data received. Returns a line.
- 2. `write` Args: `buf`, `pause=True`, `qos=True`. `buf` holds a line of text.  
- If `pause` is set the method will pause after writing to ensure that the total
- elapsed time exceeds the timeout period. This minimises the risk of buffer
- overruns in the event that an outage occurs.  
- By default, if `qos` is set, the system guarantees delivery. If it is clear
- messages may (rarely) be lost in the event of an outage. See
+ 2. `write` Args: `buf`, `qos=True`. `buf` holds a line of text.  
+ If `qos` is set, the system guarantees delivery. If it is clear messages may
+ (rarely) be lost in the event of an outage. See
  [Quality of service](./README.md#7-quality-of-service).
 
 Methods (synchronous):
  1. `status` Returns `True` if connectivity is present.
  2. `close` Closes the socket. Should be called in the event of an exception
- such as a ctrl-c interrupt.
+ such as a `ctrl-c` interrupt.
 
 Bound variable:
  1. `connects` The number of times the `Client` instance has connected to WiFi.
@@ -406,8 +406,10 @@ await client_instance
 ```
 is issued, the coroutine will pause until connectivity is (re)established.
 
-The client only buffers a single incoming message. To avoid message loss ensure
-that there is a coroutine which spends most of its time awaiting incoming data.
+The client only buffers a single incoming message. Applications should have a
+coroutine which spends most of its time awaiting incoming data. If messages
+sent with `qos==True` are not read in a timely fashion the server will
+retransmit them to ensure reception. Messages with `qos==False` may be lost.
 
 #### Initial behaviour
 
@@ -436,7 +438,7 @@ has connected with the server. Communication is then done using the `readline`
 and `write` methods of the `Connection` instance.
 
 Messages comprise a single line of text; if the line is not terminated with a
-newline ('\n') the server library will append it. Newlines are only allowed as
+newline (`\n`) the server library will append it. Newlines are only allowed as
 the last character. Blank lines will be ignored.
 
 A basic server-side application has this form:
@@ -508,13 +510,9 @@ The `Connection` instance:
 
 Methods (asynchrounous):
  1. `readline` No args. Pauses until data received. Returns a line.
- 2. `write` Args: `buf`, `pause=True`, `qos=True`. `buf` holds a line of text.  
- If `pause` is set the method will pause after writing to ensure that the total
- elapsed time exceeds the timeout period. This minimises the risk of buffer
- overruns in the event that an outage occurs. Does not preclude launching a
- further `write` coro if messages need to be sent in quick succession.  
- By default, if `qos` is set, the system guarantees delivery. If it is clear
- messages may (rarely) be lost in the event of an outage. See
+ 2. `write` Args: `buf`, `qos=True`. `buf` holds a line of text.  
+ If `qos` is set, the system guarantees delivery. If it is clear messages may
+ (rarely) be lost in the event of an outage. See
  [Quality of service](./README.md#7-quality-of-service).
 
 Methods (synchronous):
@@ -557,7 +555,7 @@ the  assumption is that the current client is already connected. It waits until
 a given set of clients have connected and returns `None`.
 
 The `peers` argument defines which clients it must await. If `peers=None` the
-coro pauses until all clients specified to `run` are also ready.  
+coro pauses until all clients specified to `run` are also ready.
 
 If a set of `client_id` values is passed as the `peers` arg, it pauses until
 all clients in the set have connected.
@@ -575,7 +573,7 @@ There are two principal ways of provoking `LmacRxBlk` errors and crashes.
  this causes an overflow to an internal ESP8266 buffer.
 
 These modules aim to address these issues transparently to application code,
-however it is possible to write applications which vioate 2.
+however it is possible to write applications which violate 2.
 
 There is a global `TIMEOUT` value defined in `local.py` which should be the
 same for the server and all clients. Each end of the link sends a `keepalive`
@@ -583,14 +581,12 @@ same for the server and all clients. Each end of the link sends a `keepalive`
 will be received in every `TIMEOUT` period. If it is not, connectivity is
 presumed lost and both ends of the interface adopt a recovery procedure.
 
-By default the `write` methods implement a pause which ensures that only one
-packet can be sent during the `TIMEOUT` interval. This aims to ensure that
-condition 2. above is met. However if more than one message is sent in quick
-succesion, only the first will have low latency.
+If an application always `await`s a write with `qos==True` there is no risk of
+Feeding excess data to a socket: this is because the coroutine does not return
+until the remote endpoint has acknowledged reception.
 
-Calling `write` with `pause=False` fixes this but requires that the application
-limits the amount of data transmitted in the `TIMEOUT` period to avoid buffer
-overflow.
+On the other hand if multiple messages are sent within a timeout period with
+`qos==False` there is a risk of buffer overflow in the event of an outage.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -610,7 +606,8 @@ where such a delayed message would be useless to the application
 While delivery may be guaranteed, timeliness is not. Messages are inevitably
 delayed for the duration of an outage.
 
-The way in which qos is achieved is discussed [here](./qos/README.md).
+Guaranteed delivery is achieved by means of acknowledge packets sent by the
+remote endpoint.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -644,12 +641,12 @@ frozen as bytecode.
 
 # 9. Extension to the Pyboard
 
-This is a work in progress, working but needs further testing. It uses I2C to
-link a Pyboard to an ESP8266. The latter runs a fixed firmware build needing no
-user code. This extends the resilient link to the Pyboard. It uses the
+This uses I2C to link a Pyboard to an ESP8266. The latter runs a fixed firmware
+build needing no user code. This extends the resilient link to the Pyboard. It
+uses the
 [existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c).
 
-![Image](https://github.com/peterhinch/micropython-samples/blob/master/images/block_diagram_pyboard.png)
+![Image](./images/block_diagram_pyboard.png)
 
 Resilient behaviour includes automatic recovery from WiFi and server outages;
 also from ESP8266 crashes.
