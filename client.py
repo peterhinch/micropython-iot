@@ -170,7 +170,7 @@ class Client:
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
         self._verbose and print('Connecting to WiFi')
-        s.connect()
+        s.connect()  # Kevin: OSError trapping needed here?
         # Break out on fail or success.
         while s.status() == network.STAT_CONNECTING:
             await asyncio.sleep(1)
@@ -185,7 +185,7 @@ class Client:
         # that link. On fail, .bad_wifi() allows for user recovery.
         await asyncio.sleep(1)  # Didn't always start after power up
         s = self._sta_if
-        s.connect()
+        s.connect()  # Kevin: OSError trapping needed here?
         for _ in range(4):
             await asyncio.sleep(1)
             if s.isconnected():
@@ -288,7 +288,7 @@ class Client:
         try:
             while True:
                 await asyncio.sleep_ms(self._tim_ka)
-                async with self._lock:
+                async with self._s_lock:
                     await self._send(b'\n')
         except OSError:
             self._evfail.set('keepalive fail')
