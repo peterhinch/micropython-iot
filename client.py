@@ -288,7 +288,7 @@ class Client:
         try:
             while True:
                 await asyncio.sleep_ms(self._tim_ka)
-                async with self._s_lock:
+                async with self._lock:
                     await self._send(b'\n')
         except OSError:
             self._evfail.set('keepalive fail')
