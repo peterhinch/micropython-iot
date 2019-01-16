@@ -17,7 +17,7 @@ import network
 import utime
 
 gc.collect()
-from . import gmid, isnew, launch, Event, Lock  # __init__.py
+from . import gmid, isnew, launch, Event, Lock, SetByte  # __init__.py
 getmid = gmid()  # Message ID generator
 gc.collect()
 
@@ -45,15 +45,15 @@ class Client:
         gc.collect()
 
         self._evfail = Event(100)  # 100ms pause
-        self._evread = Event(100)
+        self._evread = Event()  # Respond fast to incoming
         self._evsend = Event(100)
-        self._wrlock = Lock(100)
-        self._lock = Lock(100)
+        self._wrlock = Lock(100)  # For user write coro conflict.
+        self._s_lock = Lock(100)  # For internal send conflict.
 
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
         self._ok = False  # Set after 1st successful read
-        self._rxacks = set()
+        self._acks_pend = SetByte()  # ACKs which are expected to be received
         gc.collect()
         loop.create_task(self._run(loop))
 
@@ -73,18 +73,15 @@ class Client:
         self._evread.clear()
         return d
 
-    async def write(self, buf, pause=True, qos=True):
+    async def write(self, buf, qos=True):
         # Prepend message ID to a copy of buf
         fstr =  '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
         mid = next(getmid)
+        self._acks_pend.add(mid)
         buf = fstr.format(mid, buf)
-        tsent = await self._do_write(buf)
-        if qos:  # Retransmit if link has gone down
-            self._loop.create_task(self._do_qos(mid, buf))
-        if pause:  # Control tx rate: <= 1 msg per timeout period
-            dt = self._to - utime.ticks_diff(utime.ticks_ms(), tsent)
-            if dt > 0:
-                await asyncio.sleep_ms(dt)
+        await self._do_write(buf)
+        if qos:
+            await self._do_qos(mid, buf)
 
     def close(self):
         self._verbose and print('Closing sockets.')
@@ -103,36 +100,37 @@ class Client:
 
     # **** API end ****
 
-    # qos>0 Repeat tx if outage occurred after initial tx (1st may have been lost)
+    # qos==2 Retransmit until matching ACK received
     async def _do_qos(self, mid, line):
         while True:
             while not self._ok:  # Wait for any outage to clear
                 await asyncio.sleep_ms(self._tim_short)
-            tstart = utime.ticks_ms()  # Wait for ACK
-            while mid not in self._rxacks:
-                await asyncio.sleep_ms(self._tim_short)
-                if utime.ticks_diff(utime.ticks_ms(), tstart) > self._to:
-                    break  # No ACK received: retransmit
-            else:
-                self._rxacks.remove(mid)
-                break  # ACK received, all done
+            if await self._waitack(mid, self._to):  # How long before retransmit ???
+                return  # Got ack, removed from list, all done
             await self._do_write(line)
             self._verbose and print('Repeat', line, 'to server app')
+
+    async def _waitack(self, mid, t):
+        tstart = utime.ticks_ms()  # Wait for ACK
+        while mid in self._acks_pend:
+            await asyncio.sleep_ms(50)
+            if not self._ok or (utime.ticks_diff(utime.ticks_ms(), tstart) > t):
+                self._verbose and print('waitack timeout', mid)
+                return False  # No ACK received in time
+        return True
 
     async def _do_write(self, line):
         async with self._wrlock:  # May be >1 user coro launching .write
             while self._evsend.is_set():  # _writer still busy
                 await asyncio.sleep_ms(30)
-            tsent = utime.ticks_ms()
             self._evsend.set(line)  # Cleared after apparently successful tx
             while self._evsend.is_set():
                 await asyncio.sleep_ms(30)
-        return tsent
 
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
         self._verbose and print('Connecting to WiFi')
-        s.connect()
+        s.connect()  # Kevin: OSError trapping needed here?
         # Break out on fail or success.
         while s.status() == network.STAT_CONNECTING:
             await asyncio.sleep(1)
@@ -147,7 +145,7 @@ class Client:
         # that link. On fail, .bad_wifi() allows for user recovery.
         await asyncio.sleep(1)  # Didn't always start after power up
         s = self._sta_if
-        s.connect()
+        s.connect()  # Kevin: OSError trapping needed here?
         for _ in range(4):
             await asyncio.sleep(1)
             if s.isconnected():
@@ -172,6 +170,7 @@ class Client:
                 loop.create_task(_reader)
                 # Server reads ID immediately, but a brief pause is probably wise.
                 await asyncio.sleep_ms(50)
+                # No need for lock yet.
                 await self._send(self._my_id)  # Can throw OSError
             except OSError:
                 if init:
@@ -210,29 +209,28 @@ class Client:
         try:
             while True:
                 line = await self._readline()  # OSError on fail
-                cmid = line[0:2]  # MID as string
-                mid = int(cmid, 16)  # as int
-                if len(line) == 2:  # Got ACK: record the fact
-                    self._rxacks.add(mid)
+                mid = int(line[0:2], 16)
+                if len(line) == 3:  # Got ACK: remove from expected list
+                    self._acks_pend.discard(mid)  # qos0 acks are ignored
                     continue  # All done
-                # Normal message received
-                async with self._lock:  # Send ACK
-                    await self._send('{}\n'.format(cmid))
-
-                # Discard dupes
-                # mid == 0 : Server has power cycled
+                # Old message still pending. Discard new one peer will re-send.
+                if self._evread.is_set():
+                    continue
+                # Message received & can be passed to user: send ack.
+                self._loop.create_task(self._sendack(mid))
+                # Discard dupes. mid == 0 : Server has power cycled
                 if not mid:
                     isnew(-1)  # Clear down rx message record
-                # _init : client has restarted. mid == 0 server power up
-                if not mid or isnew(mid):
-                    # Read succeeded: flag .readline
-                    while self._evread.is_set():
-                        await asyncio.sleep_ms(self._tim_short)
+                if isnew(mid):
                     self._evread.set(line[2:].decode())
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
             self._evfail.set('reader fail')  # ._run cancels other coros
+
+    async def _sendack(self, mid):
+        async with self._s_lock:
+            await self._send('{:02x}\n'.format(mid))
 
     async def _writer(self):  # (re)started:
         # Wait until something is received from the server before we send.
@@ -242,9 +240,9 @@ class Client:
         try:
             while True:
                 await self._evsend
-                async with self._lock:
+                async with self._s_lock:
                     await self._send(self._evsend.value())
-                self._verbose and print('Sent data', self._evsend.value())
+#                self._verbose and print('Sent data', self._evsend.value())
                 self._evsend.clear()  # Sent unless other end has failed and not yet detected
         except OSError:
             self._evfail.set('writer fail')
@@ -253,7 +251,7 @@ class Client:
         try:
             while True:
                 await asyncio.sleep_ms(self._tim_ka)
-                async with self._lock:
+                async with self._s_lock:
                     await self._send(b'\n')
         except OSError:
             self._evfail.set('keepalive fail')
