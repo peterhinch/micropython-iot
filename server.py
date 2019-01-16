@@ -205,11 +205,6 @@ class Connection:
         await asyncio.sleep(0.2)  # Let ESP get out of bed.
         self._wr_pause = False
 
-    # Have received 1st data packet from client.
-    async def _client_active(self):
-        await asyncio.sleep(0.2)  # Let ESP get out of bed.
-        self._wr_pause = False
-
     def status(self):
         return self._sock is not None
 
