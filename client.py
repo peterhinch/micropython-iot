@@ -92,7 +92,7 @@ class Client:
         preheader = bytearray(5)
         preheader[0] = mid
         preheader[1] = 0 if header is None else len(header)
-        preheader[2] = len(buf) & 0xFF - (1 if buf.endswith("\n") else 0)
+        preheader[2] = (len(buf) & 0xFF) - (1 if buf.endswith("\n") else 0)
         preheader[3] = (len(buf) >> 8) & 0xFF  # allows for 65535 message length
         preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
         if qos:
