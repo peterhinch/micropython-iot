@@ -226,7 +226,7 @@ class Client:
                     if header is not None:
                         await self._send(header)
                     await self._send(buf)
-                    if buf.endswith("\n") is False:
+                    if buf.endswith(b"\n") is False:
                         await self._send(b"\n")
                 self._verbose and print('Sent data', preheader, header, buf, qos)
             except OSError:
@@ -454,7 +454,7 @@ class Client:
                 await asyncio.sleep_ms(0)
             elif d == b"\n":
                 return None  # either EOF or keepalive
-            elif d.startswith(b"\n"):
+            elif d.startswith(b"\n"):  # keepalive at the start of the message
                 d = d[1:]
                 m = b''.join((m, d))
             else:
