@@ -301,6 +301,7 @@ class Client:
                 if e.args[0] in (errno.ECONNABORTED, errno.ECONNRESET, errno.ECONNREFUSED):
                     if init:
                         await self.bad_server()
+                    self._sock.close()
                     continue  # temporary server outage?
             else:
                 self._sock.setblocking(False)
@@ -428,9 +429,17 @@ class Client:
                         led.toggle()
                 continue
             if preheader is None:
-                preheader = bytearray(ubinascii.unhexlify(d))
+                try:
+                    preheader = bytearray(ubinascii.unhexlify(d))
+                except ValueError:
+                    print("Error converting preheader:", d)
+                    continue
             elif header is None and preheader[1] != 0:
-                header = bytearray(ubinascii.unhexlify(d))
+                try:
+                    header = bytearray(ubinascii.unhexlify(d))
+                except ValueError:
+                    print("Error converting header:", d)
+                    continue
             elif line is None:
                 line = d
             else:
