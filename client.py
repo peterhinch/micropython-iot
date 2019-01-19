@@ -46,8 +46,6 @@ class Client:
 
         self._evfail = Event(100)  # 100ms pause
         self._evread = Event()  # Respond fast to incoming
-        self._evsend = Event(100)
-        self._wrlock = Lock(100)  # For user write coro conflict.
         self._s_lock = Lock(100)  # For internal send conflict.
 
         self.connects = 0  # Connect count for test purposes/app access
@@ -79,8 +77,8 @@ class Client:
         mid = next(getmid)
         self._acks_pend.add(mid)
         buf = fstr.format(mid, buf)
-        await self._do_write(buf)
-        if qos:
+        await self._write(buf)
+        if qos:  # Return when an ACK received
             await self._do_qos(mid, buf)
 
     def close(self):
@@ -100,32 +98,39 @@ class Client:
 
     # **** API end ****
 
-    # qos==2 Retransmit until matching ACK received
+    async def _write(self, line):
+        tshort = self._tim_short
+        while True:
+            # After an outage wait until something is received from server
+            # before we send.
+            while not self._ok:
+                await asyncio.sleep_ms(tshort)
+            try:
+                async with self._s_lock:
+                    await self._send(line)
+                return
+            except OSError:
+                pass
+
+            self._evfail.set('writer fail')
+            # Wait for a response to _evfail
+            while self._ok:
+                await asyncio.sleep_ms(tshort)
+
+    # Handle qos. Retransmit until matching ACK received.
+    # ACKs typically take 200-400ms to arrive.
     async def _do_qos(self, mid, line):
+        nms100 = 10  # Hundreds of ms to wait for ACK 
         while True:
             while not self._ok:  # Wait for any outage to clear
                 await asyncio.sleep_ms(self._tim_short)
-            if await self._waitack(mid, self._to):  # How long before retransmit ???
-                return  # Got ack, removed from list, all done
-            await self._do_write(line)
-            self._verbose and print('Repeat', line, 'to server app')
-
-    async def _waitack(self, mid, t):
-        tstart = utime.ticks_ms()  # Wait for ACK
-        while mid in self._acks_pend:
-            await asyncio.sleep_ms(50)
-            if not self._ok or (utime.ticks_diff(utime.ticks_ms(), tstart) > t):
-                self._verbose and print('waitack timeout', mid)
-                return False  # No ACK received in time
-        return True
-
-    async def _do_write(self, line):
-        async with self._wrlock:  # May be >1 user coro launching .write
-            while self._evsend.is_set():  # _writer still busy
-                await asyncio.sleep_ms(30)
-            self._evsend.set(line)  # Cleared after apparently successful tx
-            while self._evsend.is_set():
-                await asyncio.sleep_ms(30)
+            for _ in range(nms100):
+                await asyncio.sleep_ms(100)  # Wait for an ACK (how long?)
+                if mid not in self._acks_pend:
+                    return  # ACK was received
+            if self._ok:
+                await self._write(line)
+                self._verbose and print('Repeat', line, 'to server app')
 
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
@@ -176,10 +181,6 @@ class Client:
                 if init:
                     await self.bad_server()
             else:
-                # Improved cancellation code contributed by Kevin Köck
-                # Note _writer pauses before 1st tx
-                _writer = self._writer()
-                loop.create_task(_writer)
                 _keepalive = self._keepalive()
                 loop.create_task(_keepalive)
                 if self._concb is not None:
@@ -189,7 +190,6 @@ class Client:
                 self._verbose and print(self._evfail.value())
                 self._ok = False
                 asyncio.cancel(_reader)
-                asyncio.cancel(_writer)
                 asyncio.cancel(_keepalive)
                 await asyncio.sleep(1)  # wait for cancellation
                 if self._concb is not None:
@@ -231,21 +231,6 @@ class Client:
     async def _sendack(self, mid):
         async with self._s_lock:
             await self._send('{:02x}\n'.format(mid))
-
-    async def _writer(self):  # (re)started:
-        # Wait until something is received from the server before we send.
-        t = self._tim_short
-        while not self._ok:
-            await asyncio.sleep_ms(t)
-        try:
-            while True:
-                await self._evsend
-                async with self._s_lock:
-                    await self._send(self._evsend.value())
-#                self._verbose and print('Sent data', self._evsend.value())
-                self._evsend.clear()  # Sent unless other end has failed and not yet detected
-        except OSError:
-            self._evfail.set('writer fail')
 
     async def _keepalive(self):
         try:
