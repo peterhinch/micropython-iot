@@ -255,17 +255,17 @@ class Connection:
                         self._loop.create_task(self._client_active())
                     if d == b'':  # Reset by peer
                         self._close()
+                        continue
+                    d = d.lstrip()  # Discard leading KA's
+                    if d == b'':  # Only KA's
+                        continue
                     buf.extend(d)
                     l = bytes(buf).decode().split('\n')
                     if len(l) > 1:  # Have at least 1 newline
                         last = l.pop()  # If not '' it's a partial line
                         l = [x for x in l if x]  # Discard ka's
                         # Separate reponses into lines and ACKs
-                        acks = {int(x, 16) for x in l if len(x) == 2}
-                        if len(acks):
-#                            self._verbose and print('._rxacks=', self._acks_pend, 'acks=', acks)
-                            for ack in acks:
-                                self._acks_pend.discard(ack)
+                        self._acks_pend -= {int(x, 16) for x in l if len(x) == 2}
                         l = [x for x in l if len(x) != 2]  # Lines received
                         if len(l):
                             self._lines.extend(l)

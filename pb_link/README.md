@@ -189,8 +189,10 @@ Constructor args:
 
 Coroutines:
  1. `readline` Read a newline-terminated line from the server.
- 2. `write` Write a line to the server. If a terminating newline is not present
- one will be supplied.
+ 2. `write`  Args: `line`, `qos=True`. Write a line to the server. `line` holds
+ a line of text. If a terminating newline is not present one will be supplied.  
+ If `qos` is set, the system guarantees delivery. If it is clear messages may
+ (rarely) be lost in the event of an outage.
  3. `reboot` Physically reboot the ESP8266. The system will resynchronise and
  resume operation.
 

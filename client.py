@@ -150,7 +150,7 @@ class Client:
         # that link. On fail, .bad_wifi() allows for user recovery.
         await asyncio.sleep(1)  # Didn't always start after power up
         s = self._sta_if
-        s.connect()  # Kevin: OSError trapping needed here?
+        s.connect()
         for _ in range(4):
             await asyncio.sleep(1)
             if s.isconnected():

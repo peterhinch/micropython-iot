@@ -232,7 +232,7 @@ commands:
 ```
 rshell -p /dev/ttyS3  # adapt the port to your situation
 mkdir /pyboard/micropython_iot   # create directory on your esp8266  
-cp client.py __init__.py /pyboard/micropython_iot/
+cp client.mpy __init__.py /pyboard/micropython_iot/
 cp -r examples /pyboard/micropython_iot/
 cp -r qos /pyboard/micropython_iot/
 cp -r example_remote_control /pyboard/micropython_iot/

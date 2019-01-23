@@ -7,6 +7,7 @@
 import gc
 import uasyncio as asyncio
 import network
+import time
 
 gc.collect()
 
@@ -32,8 +33,9 @@ class LinkClient(client.Client):
     async def bad_wifi(self):
         self._verbose and print('bad_wifi started')
         config = self.config
-        sta_if = self._sta_if
-        ssid = config[5]  # SSID
+        sta_if = network.WLAN(network.STA_IF)  # was self._sta_if
+        ssid = config[5]
+        pw = config[6]
         # Either ESP does not 'know' this WLAN or it needs time to connect.
         if ssid == '':  # No SSID supplied: can only keep trying
             self._verbose and print('Connecting to ESP8266 stored network...')
@@ -41,8 +43,8 @@ class LinkClient(client.Client):
         else:
             # Try to connect to specified WLAN. ESP will save details for
             # subsequent connections.
-            self._verbose and print('Connecting to specified network...')
-            sta_if.connect(ssid, config[6])
+            self._verbose and print('Connecting to specified network', ssid, pw)
+            sta_if.connect(ssid, pw)
         self._verbose and print('Awaiting WiFi.')
         for _ in range(20):
             await asyncio.sleep(1)
@@ -105,12 +107,13 @@ class App:
         while True:
             line = await self.sreader.readline()
             line = line.decode()
+            qos = line.startswith('1')
             # Implied copy at start of write()
             # If the following pauses for an outage, the Pyboard may write
             # one more line. Subsequent calls to channel.write pause pending
             # resumption of communication with the server.
-            await self.cl.write(line, qos=True)
-            self.verbose and print('Sent', line, 'to server app')
+            await self.cl.write(line[1:], qos=qos)
+            self.verbose and print('Sent', line[1:], 'to server app')
 
     async def from_server(self):
         self.verbose and print('Started from_server task.')
