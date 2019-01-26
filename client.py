@@ -215,6 +215,7 @@ class Client:
     async def _write(self, preheader, header, buf, qos, mid, ack=False):
         if buf is None:
             buf = b""
+        repeat = False
         while True:
             # After an outage wait until something is received from server
             # before we send.
@@ -222,7 +223,7 @@ class Client:
                 await asyncio.sleep_ms(self._tim_short)
             try:
                 async with self._s_lock:
-                    if ack is False:
+                    if qos:  # ACK is qos False, so no need to check
                         self._acks_pend.add(mid)
                     await self._send(preheader)
                     if header is not None:
@@ -237,10 +238,11 @@ class Client:
                 while self._ok:
                     await asyncio.sleep_ms(self._tim_short)
                 continue
-            if ack is False:
+            if ack is False and repeat is False:  # on repeat does not wait for ticket or modify it
                 self._tx_mid += 1  # allows next write to start before receiving ACK
                 if self._tx_mid == 256:
                     self._tx_mid = 1
+            repeat = True
             if qos is False:
                 return True
             else:

@@ -316,7 +316,7 @@ class Connection:
                     # ACK does not get qos as server will resend message if outage occurs
 
     async def _sendack(self, buf, mid):
-        await self._vwrite(buf, qos=False, mid=mid)
+        await self._vwrite(buf, qos=False, mid=mid, ack=True)
 
     async def _keepalive(self):
         while True:
@@ -346,9 +346,10 @@ class Connection:
         await self._vwrite(buf, mid, qos)
         self._verbose and print('Sent data', buf)
 
-    async def _vwrite(self, buf, mid, qos):  # Verbatim write: add no message ID
+    async def _vwrite(self, buf, mid, qos, ack=False):  # Verbatim write: add no message ID
         if buf is None:
             print("vwrite", buf, mid, qos)
+        repeat = False
         while True:
             ok = False
             while not ok:
@@ -360,9 +361,14 @@ class Connection:
                     buf = '\n'  # Keepalive. Send now: don't care about loss
 
                 async with self._wlock:  # >1 writing task?
+                    if qos:
+                        self._acks_pend.add(mid)
                     ok = await self._send(buf)  # Fail clears status
-            self._tx_mid += 1  # Let next task write before receiving ACK
-            self._acks_pend.add(mid)
+            if ack is False and repeat is False:
+                self._tx_mid += 1  # allows next write to start before receiving ACK
+                if self._tx_mid == 256:
+                    self._tx_mid = 1
+            repeat = True
             if qos:
                 end = time.time() + self._to_secs
                 while mid in self._acks_pend and time.time() < end:
