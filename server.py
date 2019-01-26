@@ -126,7 +126,7 @@ class Connection:
                 c_sock.close()
             else:  # Reconnect after failure
                 cls._conns[client_id]._reconnect(c_sock)
-        else: # New client: instantiate Connection
+        else:  # New client: instantiate Connection
             Connection(loop, to_secs, c_sock, client_id, init_str, verbose)
 
     # Server-side app waits for a working connection
@@ -231,17 +231,17 @@ class Connection:
                 await self._status_coro()
                 self._verbose and print('Client:', self._cl_id, 'connected')
             while self():
-                h,l = self._readline()
+                h, l = self._readline()
                 if l is not None:
-                    return h,l
+                    return h, l
                 await asyncio.sleep(TIM_TINY)  # Limit CPU utilisation
 
     # Immediate return. If a non-duplicate line is ready return it.
     def _readline(self):
         while self._lines:
             header, line = self._lines.pop(0)
-            return header,line
-        return None,None
+            return header, line
+        return None, None
 
     async def _read(self, istr):
         while True:
@@ -312,7 +312,7 @@ class Connection:
                     preheader[4] = 0x2C  # ACK
                     fstr = "{}\n"
                     buf = fstr.format(ubinascii.hexlify(preheader).decode())
-                    self._loop.create_task(self._sendack(buf,mid=preheader[0]))
+                    self._loop.create_task(self._sendack(buf, mid=preheader[0]))
                     # ACK does not get qos as server will resend message if outage occurs
 
     async def _sendack(self, buf, mid):
@@ -342,7 +342,7 @@ class Connection:
         while self._tx_mid + 1 != mid:
             await asyncio.sleep(0.05)
         fstr = "{}{}{}" if line.endswith("\n") else "{}{}{}\n"
-        buf = fstr.format(preheader, "" if header is None else ubinascii.hexlify(header).decode(), buf)
+        buf = fstr.format(preheader, "" if header is None else ubinascii.hexlify(header).decode(), line)
         await self._vwrite(buf, mid, qos)
         self._verbose and print('Sent data', buf)
 
@@ -361,7 +361,7 @@ class Connection:
 
                 async with self._wlock:  # >1 writing task?
                     ok = await self._send(buf)  # Fail clears status
-            self._tx_mid += 1 # Let next task write before receiving ACK
+            self._tx_mid += 1  # Let next task write before receiving ACK
             self._acks_pend.add(mid)
             if qos:
                 end = time.time() + self._to_secs

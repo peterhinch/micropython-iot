@@ -30,7 +30,6 @@ def gmid():
         mid = mid if mid else 1
 
 
-"""
 # Return True if a message ID has not already been received
 def isnew(mid, lst=bytearray(32)):
     if mid == -1:
@@ -39,11 +38,31 @@ def isnew(mid, lst=bytearray(32)):
         return
     idx = mid >> 3
     bit = 1 << (mid & 7)
-    res = not(lst[idx] & bit)
+    res = not (lst[idx] & bit)
     lst[idx] |= bit
     lst[(idx + 16 & 0x1f)] = 0
     return res
-"""
+
+
+# Minimal implementation of set for integers in range 0-255
+class SetByte:
+    def __init__(self):
+        self._ba = bytearray(32)
+
+    def __bool__(self):
+        for x in self._ba:
+            if x:
+                return True
+        return False
+
+    def __contains__(self, i):
+        return (self._ba[i >> 3] & 1 << (i & 7)) > 0
+
+    def discard(self, i):
+        self._ba[i >> 3] &= ~(1 << (i & 7))
+
+    def add(self, i):
+        self._ba[i >> 3] |= 1 << (i & 7)
 
 # Minimal implementation of set for integers in range 0-255
 class SetByte:
