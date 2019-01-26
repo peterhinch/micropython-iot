@@ -215,8 +215,6 @@ class Client:
             loop.create_task(_reader)
             # Server reads ID immediately, but a brief pause is probably wise.
             await asyncio.sleep_ms(50)
-            # last_mid = self._recv_mid
-            self._ack_mid = -1
             preheader = bytearray(5)
             preheader[0] = 0x2C  # mid but in this case protocol identifier but will receive an ACK with mid 0x2C
             preheader[1] = 0  # header length
@@ -224,11 +222,14 @@ class Client:
             preheader[3] = (len(self._my_id) >> 8) & 0xFF  # allows for 65535 message length
             preheader[4] = 0xFF  # clean connection, shows if device has been reset or just a wifi outage
             preheader = ubinascii.hexlify(preheader)
-            ok = await self._write(preheader, None, self._my_id, True, 0x2C, init=True)
-            print("Got login", ok)
-            if ok:
-                self._ok = True  # only set self._ok after sending the id was successful.
-                # self._ack_mid = last_mid  # restore state before sending id to prevent getting a dupe
+            try:
+                # not sending as qos message. Using server keepalive as ACK
+                await self._send(preheader)
+                await self._send(self._my_id)
+                await self._send(b"\n")
+            except OSError:
+                self._verbose and print("Sending id failed")
+            else:
                 _keepalive = self._keepalive()
                 loop.create_task(_keepalive)
                 if self._concb is not None:
@@ -241,17 +242,16 @@ class Client:
                 if self._concb is not None:
                     # apps might need to know if they lost connection to the server
                     launch(self._concb, False, *self._concbargs)
-            else:
-                asyncio.cancel(_reader)
-            self._verbose and print(self._evfail.value())
-            await asyncio.sleep(1)  # wait for cancellation but notify application before
-            init = False
-            self.close()  # Close socket
-            s.disconnect()
-            # await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage.
-            # server should detect outage if client reconnects or no ACKs are received in qos
-            while s.isconnected():
-                await asyncio.sleep(1)
+                self._verbose and print(self._evfail.value())
+                await asyncio.sleep(1)  # wait for cancellation but notify application before
+            finally:
+                init = False
+                self.close()  # Close socket
+                s.disconnect()
+                # await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage.
+                # server should detect outage if client reconnects or no ACKs are received in qos
+                while s.isconnected():
+                    await asyncio.sleep(1)
 
     async def _reader(self):  # Entry point is after a (re) connect.
         c = self.connects  # Count successful connects
@@ -314,6 +314,7 @@ class Client:
             d = await self._read_small(cnt, start)
             # d is not None and print("read small got", d, cnt)
             if d is None:
+                self._ok = True
                 if line is not None:
                     return preheader, header, line.decode()
                 line = None
