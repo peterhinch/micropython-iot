@@ -188,7 +188,6 @@ class Connection:
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
         self._acks_pend = set()  # ACKs which are expected to be received
-        self._ack_mid = -1  # last received ACK mid
         self._tx_mid = -1  # sent mid, used for keeping messages in order
 
         loop.create_task(self._read(init_str))
@@ -297,7 +296,7 @@ class Connection:
                 preheader = bytearray(ubinascii.unhexlify(line[:10].encode()))
                 mid = preheader[0]
                 if preheader[4] == 0x2C:  # ACK
-                    self._ack_mid = mid
+                    self._acks_pend.discard(mid)
                     print("Got ACK mid", mid)
                     continue
                 if not mid:
