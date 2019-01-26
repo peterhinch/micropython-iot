@@ -275,7 +275,9 @@ class Client:
             preheader[4] = 0xFF  # clean connection, shows if device has been reset or just a wifi outage
             preheader = ubinascii.hexlify(preheader)
             try:
-                await self._write(preheader, None, self._my_id, True, 0x2C)
+                await self._send(preheader)
+                await self._send(self._my_id)
+                await self._send(b"\n")
             except OSError:
                 if init:
                     await self.bad_server()
@@ -332,7 +334,7 @@ class Client:
             self._evfail.set('reader fail')  # ._run cancels other coros
 
     async def _sendack(self, mid):
-        preheader = bytearray(4)
+        preheader = bytearray(5)
         preheader[0] = mid
         preheader[1] = preheader[2] = preheader[3] = 0
         preheader[4] = 0x2C  # ACK
