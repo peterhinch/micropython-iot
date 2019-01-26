@@ -40,15 +40,15 @@ class App:
     async def reader(self):
         print('Started reader')
         while True:
-            header, line = await self.conn.readline()  # Pause in event of outage
+            line = await self.conn.readline()  # Pause in event of outage
             try:
                 self.data = json.loads(line)
             except json.JSONDecodeError:
-                print("Error converting {!s} {!s}".format(header, line))
+                print("Error converting {!s}".format(line))
                 continue
             # Receives [restart count, uptime in secs, mem_free]
-            print('Got', header, self.data, 'from remote', self.client_id)
-            await self.conn.write(None, json.dumps(self.data))
+            print('Got', self.data, 'from remote', self.client_id)
+            await self.conn.writeline(json.dumps(self.data))
 
     # Send
     # [approx app uptime in secs/5, received client uptime, received mem_free]
@@ -60,7 +60,7 @@ class App:
             count += 1
             print('Sent', self.data, 'to remote', self.client_id, '\n')
             # .write() behaves as per .readline()
-            await self.conn.write(None, json.dumps(self.data))
+            await self.conn.writeline(json.dumps(self.data))
             await asyncio.sleep(5)
 
 

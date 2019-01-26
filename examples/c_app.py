@@ -49,10 +49,10 @@ class App(client.Client):
         while True:
             # Attempt to read data: in the event of an outage, .readline()
             # pauses until the connection is re-established.
-            header, line = await self.cl.readline()
+            line = await self.cl.readline()
             data = ujson.loads(line)
             # Receives [restart count, uptime in secs]
-            print('Got', header, data, 'from server app')
+            print('Got', data, 'from server app')
 
     # Send [approx application uptime in secs, (re)connect count]
     async def writer(self):
@@ -69,7 +69,7 @@ class App(client.Client):
             print('Sent', data, 'to server app\n')
             # .write() behaves as per .readline()
             st = utime.ticks_ms()
-            await self.cl.write(None, ujson.dumps(data))
+            await self.cl.writeline(ujson.dumps(data))
             latency = utime.ticks_ms() - st
             self.latency_added += latency
             self.count += 1
