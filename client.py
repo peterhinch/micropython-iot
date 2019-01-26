@@ -71,7 +71,6 @@ class Client:
         self._ok = False  # Set after 1st successful read
 
         self._tx_mid = 0  # sent mid +1, used for keeping messages in order
-        self._recv_mid = -1  # last received mid, used for deduping as message can't be out-of-order
         self._acks_pend = SetByte()  # ACKs which are expected to be received
 
         self._mcw = not in_order  # multiple concurrent writes.
@@ -321,8 +320,8 @@ class Client:
                     self._verbose and print("Dumping new message", self._evread.value())
                     continue
                 # Discard dupes. mid == 0 : Server has power cycled
-                if not mid:  # Clear down rx message record
-                    isnew(-1)
+                if not mid:
+                    isnew(-1)  # Clear down rx message record
                 if isnew(mid):
                     self._evread.set((header, line))
                 if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe

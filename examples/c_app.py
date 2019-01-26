@@ -21,7 +21,7 @@ gc.collect()
 class App:
     def __init__(self, loop, my_id, server, port, timeout, verbose):
         self.verbose = verbose
-        led = None  # Pin(2, Pin.OUT, value=1)  # Optional LED
+        led = Pin(2, Pin.OUT, value=1)  # Optional LED
         self.cl = client.Client(loop, my_id, server, port, timeout, self.constate, None, verbose, led)
         loop.create_task(self.start(loop))
         self.latency_added = 0
