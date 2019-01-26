@@ -38,7 +38,22 @@ class Client:
     def __init__(self, loop, my_id, server, ssid='', pw='',
                  port=8123, timeout=1500,
                  conn_cb=None, conn_cb_args=None,
-                 verbose=False, led=None, wdog=False):
+                 verbose=False, led=None, wdog=False,
+                 in_order=False):
+        """
+        Create a client connection object
+        :param loop: uasyncio loop
+        :param my_id: client id
+        :param server: server address/ip
+        :param port: port the server app is running on
+        :param timeout: connection timeout
+        :param connected_cb: cb called when (dis-)connected to server
+        :param connected_cb_args: optional args to pass to connected_cb
+        :param verbose: debug output
+        :param led: led output for showing connection state, heartbeat
+        :param in_order: strictly send messages in order. Prevents multiple concurrent
+        writes to ensure that all messages are sent in order even if an outage occurs.
+        """
         self._loop = loop
         self._my_id = my_id
         self._server = server
@@ -114,6 +129,8 @@ class Client:
         self._tx_mid = 0  # sent mid +1, used for keeping messages in order
         self._recv_mid = -1  # last received mid, used for deduping as message can't be out-of-order
         self._acks_pend = SetByte()  # ACKs which are expected to be received
+
+        self._mcw = not in_order  # multiple concurrent writes.
         gc.collect()
         loop.create_task(self._run(loop))
 
@@ -124,23 +141,48 @@ class Client:
 
     __await__ = __iter__
 
-    def status(self):
+    def status(self) -> bool:
+        """
+        Returns the state of the connection
+        :return: bool
+        """
         return self._ok
 
-    async def readline(self):
+    async def readline(self) -> str:
+        """
+        Reads one line
+        :return: string
+        """
+        h, d = await self.read()
+        return d
+
+    async def read(self) -> (bytearray, str):
+        """
+        Reads one message containing header and line.
+        Header can be None if empty.
+        :return: header, line
+        """
         await self._evread
         h, d = self._evread.value()
         self._evread.clear()
         return h, d
 
+    async def writeline(self, buf, qos=True):
+        """
+        Write one line.
+        :param buf: str
+        :param qos: bool
+        :return: None
+        """
+        await self.write(None, buf, qos)
+
     async def write(self, header, buf, qos=True):
         """
-        Send a new message
-        :param header: optional user header, make sure it does not get modified
+        Send a new message containing header and line
+        :param header: optional user header, pass None if not used
         :param buf: string/byte, message to be sent
-        after sending as it is passed by reference
         :param qos: bool
-        :return:
+        :return: None
         """
         if len(buf) > 65535:
             raise ValueError("Message longer than 65535")
@@ -163,9 +205,6 @@ class Client:
         while self._tx_mid != mid or self._ok is False:
             await asyncio.sleep_ms(50)  # wait until the mid is scheduled to be sent, keeps messages in order
         await self._write(preheader, header, buf, qos, mid)
-        self._tx_mid += 1  # allows next write to start, got ACK with qos.
-        if self._tx_mid == 256:
-            self._tx_mid = 1
 
     def close(self):
         self._close()  # Close socket and WDT
@@ -238,8 +277,10 @@ class Client:
                 while self._ok:
                     await asyncio.sleep_ms(self._tim_short)
                 continue
-            if ack is False and repeat is False:  # on repeat does not wait for ticket or modify it
-                self._tx_mid += 1  # allows next write to start before receiving ACK
+            if ack is False and repeat is False and self._mcw is True:
+                # on repeat does not wait for ticket or modify it
+                # allows next write to start before receiving ACK
+                self._tx_mid += 1
                 if self._tx_mid == 256:
                     self._tx_mid = 1
             repeat = True
@@ -255,6 +296,12 @@ class Client:
                     while self._ok:
                         await asyncio.sleep_ms(self._tim_short)
                     continue
+                if self._mcw is False:
+                    # if mcw are not allowed, let next coro write only after receiving an ACK
+                    # to ensure that all qos messages are kept in order.
+                    self._tx_mid += 1
+                    if self._tx_mid == 256:
+                        self._tx_mid = 1
                 return True
 
     # Make an attempt to connect to WiFi. May not succeed.
@@ -333,6 +380,8 @@ class Client:
                     await self._send(b"\n")
                 except OSError:
                     self._verbose and print("Sending id failed")
+                    if init:
+                        await self.bad_server()
                 else:
                     _keepalive = self._keepalive()
                     loop.create_task(_keepalive)
@@ -371,26 +420,32 @@ class Client:
                 # Discard dupes
                 mid = preheader[0]
                 if preheader[4] == 0x2C:  # ACK
-                    print("Got ack mid", mid)
+                    self._verbose and print("Got ack mid", mid)
                     self._acks_pend.discard(mid)
                     continue # All done
                 # Old message still pending. Discard new one peer will re-send.
                 if self._evread.is_set():
                     self._verbose and print("Dumping new message", self._evread.value())
                     continue
-                if not mid:
+                # Discard dupes. mid == 0 : Server has power cycled
+                if not mid:  # Clear down rx message record
                     isnew(-1)
                 if isnew(mid):
                     self._evread.set((header, line))
                 if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
-                    preheader[1] = preheader[2] = preheader[3] = 0
-                    preheader[4] = 0x2C  # ACK
-                    await self._write(ubinascii.hexlify(preheader), None, None, qos=False, mid=preheader[0], ack=True)
-                    # ACK does not get qos as server will resend message if outage occurs
+                    self._loop.create_task(self._sendack(mid))
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
             self._evfail.set('reader fail')  # ._run cancels other coros
+
+    async def _sendack(self, mid):
+        preheader = bytearray(4)
+        preheader[0] = mid
+        preheader[1] = preheader[2] = preheader[3] = 0
+        preheader[4] = 0x2C  # ACK
+        await self._write(ubinascii.hexlify(preheader), None, None, qos=False, mid=mid, ack=True)
+        # ACK does not get qos as server will resend message if outage occurs
 
     async def _keepalive(self):
         while True:
