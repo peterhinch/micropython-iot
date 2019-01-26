@@ -319,11 +319,14 @@ class Client:
                 preheader[3] = (len(self._my_id) >> 8) & 0xFF  # allows for 65535 message length
                 preheader[4] = 0xFF  # clean connection, shows if device has been reset or just a wifi outage
                 preheader = ubinascii.hexlify(preheader)
-                ok = await self._write(preheader, None, self._my_id, True, 0x2C, init=True)
-                print("Got login", ok)
-                if ok:
-                    self._ok = True  # only set self._ok after sending the id was successful.
-                    # self._ack_mid = last_mid  # restore state before sending id to prevent getting a dupe
+                try:
+                    # not sending as qos message. Using server keepalive as ACK
+                    await self._send(preheader)
+                    await self._send(self._my_id)
+                    await self._send(b"\n")
+                except OSError:
+                    self._verbose and print("Sending id failed")
+                else:
                     _keepalive = self._keepalive()
                     loop.create_task(_keepalive)
                     if self._concb is not None:
@@ -339,8 +342,6 @@ class Client:
                     if self._concb is not None:
                         # apps might need to know if they lost connection to the server
                         launch(self._concb, False, *self._concbargs)
-                else:
-                    asyncio.cancel(_reader)
             finally:
                 init = False
                 self._close()  # Close socket but not wdt
@@ -416,6 +417,7 @@ class Client:
             d = await self._read_small(cnt, start)
             # d is not None and print("read small got", d, cnt)
             if d is None:
+                self._ok = True
                 if line is not None:
                     return preheader, header, line.decode()
                 line = None
