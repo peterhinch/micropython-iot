@@ -58,12 +58,8 @@ These instructions assume an installation to the SD card. If installing to
 flash, substitute `flash` for `sd` below.
 
 On the Pyboard create a directory `/sd/micropython_iot`. Copy the following
-files to this directory:
+file to this directory:
  1. `__init__.py`
-
-Edit `micropython_iot/pb_link/config.py` to match local conditions, notably
-server IP address and WiFi credentials. WiFi credentials may be empty strings
-if the ESP8266 has been initialised with a WiFi connection.
 
 Create the directory  `/sd/micropython_iot/pb_link` and copy the following
 files from `micropython_iot/pb_link` to it:
@@ -72,6 +68,11 @@ files from `micropython_iot/pb_link` to it:
  3. `config.py`
  4. `pb_client.py`
  5. `aswitch.py`
+ 6. `__init__.py`
+
+Edit `micropython_iot/pb_link/config.py` to match local conditions, notably
+server IP address and WiFi credentials. WiFi credentials may be empty strings
+if the ESP8266 has been initialised with a WiFi connection.
 
 Start by issuing
 ```python
@@ -80,9 +81,18 @@ import micropython_iot.pb_link.pb_client
 
 #### On the ESP8266
 
-One option is to install the precompiled build. **TODO forthcoming**
+The current release build V1.9.4 is too old to support this application. This
+means that a build must be compiled with `uasyncio` as frozen bytecode. For
+those not wishing to compile a build, the provided `firmware-combined.bin` may
+be installed with the following commands:
 
-Alternatively create a directory `/pyboard/micropython_iot`. Copy the following
+```
+esptool.py  --port /dev/ttyUSB0 erase_flash
+esptool.py --port /dev/ttyUSB0 --baud 115200 write_flash --verify --flash_size=detect -fm dio 0 firmware-combined.bin 
+```
+
+If you compile your own build follow these steps at the REPL:  
+Create a directory `/pyboard/micropython_iot`. Copy the following
 files to this directory:
  1. `__init__.py`
  2. `client.mpy`
@@ -93,6 +103,10 @@ Edit `/pyboard/main.py` to read:
 ```python
 from micropython_iot.esp_link import esp_link
 ```
+
+There is currently an issue which I am investigating where the ESP8266 crashes
+if it has no stored WiFi credentials. The workround is to access the REPL and
+connect to your local network before running the demo.
 
 ### Dependency
 

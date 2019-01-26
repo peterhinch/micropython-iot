@@ -182,9 +182,9 @@ Note that if `uasyncio` is to be installed it should be acquired from
 should not be installed from PyPi using `upip`: the version on PyPi is
 incompatible with official firmware.
 
-If a daily build is used it will be necessary to
+It is necessary to
 [cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
-`client.py`
+`client.py`. The file `client.mpy` is provided for those unable to do this.
 
 #### Preconditions
 
@@ -516,7 +516,8 @@ Methods (asynchrounous):
  [Quality of service](./README.md#7-quality-of-service).
 
 Methods (synchronous):
- 1. `status` Returns `True` if connectivity is present.
+ 1. `status` Returns `True` if connectivity is present. The connection state
+ may also be retrieved using function call syntax (via `.__call__`).
  2. `__getitem__` Enables the `Connection` of another client to be retrieved
  using list element access syntax. Will throw a `KeyError` if the client is
  unknown (has never connected).
