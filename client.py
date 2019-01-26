@@ -21,6 +21,7 @@ import ubinascii
 
 gc.collect()
 from . import gmid, isnew, launch, Event, Lock, SetByte  # __init__.py
+
 getmid = gmid()  # Message ID generator
 gc.collect()
 
@@ -48,8 +49,8 @@ class Client:
         gc.collect()
 
         self._evfail = Event(100)  # 100ms pause
-        self._evread = Event() # Respond fast to incoming
-        self._lock = Lock(100)
+        self._evread = Event()  # Respond fast to incoming
+        self._lock = Lock(100)  # For internal send conflict.
 
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
@@ -103,7 +104,7 @@ class Client:
                 raise TypeError("Header has to be bytearray")
             else:
                 header = ubinascii.hexlify(header)
-        while self._tx_mid != mid or self._ok is False: # keeps order even with multiple writes
+        while self._tx_mid != mid or self._ok is False:  # keeps order even with multiple writes
             await asyncio.sleep_ms(50)  # wait until the mid is scheduled to be sent, keeps messages in order
         await self._write(preheader, header, buf, qos, mid)
 
@@ -185,7 +186,7 @@ class Client:
         # that link. On fail, .bad_wifi() allows for user recovery.
         await asyncio.sleep(1)  # Didn't always start after power up
         s = self._sta_if
-        s.connect()  # Kevin: OSError trapping needed here?
+        s.connect()
         for _ in range(4):
             await asyncio.sleep(1)
             if s.isconnected():
@@ -245,7 +246,7 @@ class Client:
                     launch(self._concb, False, *self._concbargs)
                 await asyncio.sleep(1)  # wait for cancellation but notify application before
             finally:
-                init=False
+                init = False
                 self.close()  # Close socket
                 s.disconnect()
                 # await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage.
@@ -260,13 +261,11 @@ class Client:
         try:
             while True:
                 preheader, header, line = await self._readline()  # OSError on fail
-                print("Got", preheader, header, line)
-                # Discard dupes
                 mid = preheader[0]
                 if preheader[4] == 0x2C:  # ACK
                     print("Got ack mid", mid)
                     self._acks_pend.discard(mid)
-                    continue # All done
+                    continue  # All done
                 # Old message still pending. Discard new one peer will re-send.
                 if self._evread.is_set():
                     self._verbose and print("Dumping new message", self._evread.value())
@@ -276,14 +275,19 @@ class Client:
                 if isnew(mid):
                     self._evread.set((header, line))
                 if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
-                    preheader[1] = preheader[2] = preheader[3] = 0
-                    preheader[4] = 0x2C  # ACK
-                    await self._write(ubinascii.hexlify(preheader), None, None, qos=False, mid=preheader[0], ack=True)
-                    # ACK does not get qos as server will resend message if outage occurs
+                    self._loop.create_task(self._sendack(mid))
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
             self._evfail.set('reader fail')  # ._run cancels other coros
+
+    async def _sendack(self, mid):
+        preheader = bytearray(4)
+        preheader[0] = mid
+        preheader[1] = preheader[2] = preheader[3] = 0
+        preheader[4] = 0x2C  # ACK
+        await self._write(ubinascii.hexlify(preheader), None, None, qos=False, mid=mid, ack=True)
+        # ACK does not get qos as server will resend message if outage occurs
 
     async def _keepalive(self):
         try:
