@@ -363,8 +363,6 @@ class Client:
                 loop.create_task(_reader)
                 # Server reads ID immediately, but a brief pause is probably wise.
                 await asyncio.sleep_ms(50)
-                # last_mid = self._recv_mid
-                self._ack_mid = -1
                 preheader = bytearray(5)
                 preheader[0] = 0x2C  # mid but in this case protocol identifier but will receive an ACK with mid 0x2C
                 preheader[1] = 0  # header length
@@ -415,8 +413,6 @@ class Client:
         try:
             while True:
                 preheader, header, line = await self._readline()  # OSError on fail
-                print("Got", preheader, header, line)
-                # Discard dupes
                 mid = preheader[0]
                 if preheader[4] == 0x2C:  # ACK
                     self._verbose and print("Got ack mid", mid)
@@ -439,7 +435,7 @@ class Client:
             self._evfail.set('reader fail')  # ._run cancels other coros
 
     async def _sendack(self, mid):
-        preheader = bytearray(4)
+        preheader = bytearray(5)
         preheader[0] = mid
         preheader[1] = preheader[2] = preheader[3] = 0
         preheader[4] = 0x2C  # ACK
