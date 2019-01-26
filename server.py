@@ -72,7 +72,7 @@ async def _readid(s, to_secs):
 # Allow 2 extra connections. This is to cater for error conditions like
 # duplicate or unexpected clients. Accept the connection and have the
 # Connection class produce a meaningful error message.
-async def run(loop, expected, verbose=False, port=8123, timeout=1500):
+async def run(loop, expected, verbose=False, port=8123, timeout=1500, in_order=False):
     addr = socket.getaddrinfo('0.0.0.0', port, 0, socket.SOCK_STREAM)[0][-1]
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -93,7 +93,7 @@ async def run(loop, expected, verbose=False, port=8123, timeout=1500):
                 c_sock.close()
             else:
                 Connection.go(loop, to_secs, data, verbose, c_sock, s_sock,
-                              expected)
+                              expected, mcw=not in_order)
         await asyncio.sleep(0.2)
 
 
@@ -104,9 +104,10 @@ class Connection:
     _conns = {}  # index: client_id. value: Connection instance
     _expected = set()  # Expected client_id's
     _server_sock = None
+    _mcw = True  # multiple concurrent writes
 
     @classmethod
-    def go(cls, loop, to_secs, data, verbose, c_sock, s_sock, expected):
+    def go(cls, loop, to_secs, data, verbose, c_sock, s_sock, expected, mcw):
         line, init_str = data.split('\n', 1)
         preheader = bytearray(ubinascii.unhexlify(line[:10].encode()))
         mid = preheader[0]
@@ -122,6 +123,7 @@ class Connection:
         if cls._server_sock is None:  # 1st invocation
             cls._server_sock = s_sock
             cls._expected.update(expected)
+            cls._mcw = mcw
         if client_id in cls._conns:  # Old client, new socket
             if cls._conns[client_id].status():
                 print('Duplicate client {} ignored.'.format(client_id))
@@ -224,9 +226,13 @@ class Connection:
             await asyncio.sleep(self._tim_short)
 
     async def readline(self):
-        l = self._readline()
+        h, l = await self.read()
+        return l
+
+    async def read(self):
+        h, l = self._readline()
         if l is not None:
-            return l
+            return h, l
         # Must wait for data
         while True:
             if self._verbose and not self():
@@ -326,6 +332,9 @@ class Connection:
             await self._vwrite(None, mid=None, qos=False)
             await asyncio.sleep(self._tim_ka)
 
+    async def writeline(self, line, qos=True):
+        await self.write(None, line, qos)
+
     async def write(self, header, line, qos=True):
         if header is not None:
             if type(header) != bytearray:
@@ -367,8 +376,10 @@ class Connection:
                     if qos:
                         self._acks_pend.add(mid)
                     ok = await self._send(buf)  # Fail clears status
-            if ack is False and repeat is False:
-                self._tx_mid += 1  # allows next write to start before receiving ACK
+            if ack is False and repeat is False and self._mcw is True:
+                # on repeat does not wait for ticket or modify it
+                # allows next write to start before receiving ACK
+                self._tx_mid += 1
                 if self._tx_mid == 256:
                     self._tx_mid = 1
             repeat = True
@@ -381,6 +392,12 @@ class Connection:
                     self._close()
                     await asyncio.sleep(1)
                     continue
+                if self._mcw is False:
+                    # if mcw are not allowed, let next coro write only after receiving an ACK
+                    # to ensure that all qos messages are kept in order.
+                    self._tx_mid += 1
+                    if self._tx_mid == 256:
+                        self._tx_mid = 1
             break
 
     # Send a string. Return True on apparent success, False on failure.

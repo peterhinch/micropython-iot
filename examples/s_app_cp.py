@@ -35,7 +35,7 @@ class App:
         print('Client {} Awaiting connection.'.format(self.client_id))
         self.conn = await server.client_conn(self.client_id)
         loop.create_task(self.reader())
-        # loop.create_task(self.writer())
+        loop.create_task(self.writer())
 
     async def reader(self):
         print('Started reader')
