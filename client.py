@@ -317,6 +317,7 @@ class Client:
             d = await self._read_small(cnt, start)
             # d is not None and print("read small got", d, cnt)
             if d is None:
+                self._ok = True
                 if line is not None:
                     return preheader, header, line.decode()
                 line = None

@@ -21,7 +21,7 @@ gc.collect()
 class App:
     def __init__(self, loop, my_id, server, port, timeout, verbose):
         self.verbose = verbose
-        led = Pin(2, Pin.OUT, value=1)  # Optional LED
+        led = None  # Pin(2, Pin.OUT, value=1)  # Optional LED
         self.cl = client.Client(loop, my_id, server, port, timeout, self.constate, None, verbose, led)
         loop.create_task(self.start(loop))
         self.latency_added = 0
@@ -66,7 +66,7 @@ class App:
             self.latency_added += latency
             self.count += 1
             print("Latency:", latency, "Avg Latency:", self.latency_added / self.count)
-            # await asyncio.sleep(5)
+            await asyncio.sleep(2)
 
     def close(self):
         self.cl.close()
