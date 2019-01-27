@@ -158,7 +158,7 @@ class Client:
     async def read(self) -> (bytearray, str):
         """
         Reads one message containing header and line.
-        Header can be None if empty.
+        Header can be None if not used.
         :return: header, line
         """
         await self._evread
@@ -169,7 +169,7 @@ class Client:
     async def writeline(self, buf, qos=True):
         """
         Write one line.
-        :param buf: str
+        :param buf: str/bytes
         :param qos: bool
         :return: None
         """
@@ -179,17 +179,19 @@ class Client:
         """
         Send a new message containing header and line
         :param header: optional user header, pass None if not used
-        :param buf: string/byte, message to be sent
+        :param buf: string/byte/None, message to be sent
         :param qos: bool
         :return: None
         """
+        if buf is None:
+            buf = b''
         if len(buf) > 65535:
             raise ValueError("Message longer than 65535")
         mid = next(getmid)
         preheader = bytearray(5)
         preheader[0] = mid
         preheader[1] = 0 if header is None else len(header)
-        preheader[2] = (len(buf) & 0xFF) - (1 if buf.endswith("\n") else 0)
+        preheader[2] = (len(buf) & 0xFF) - (1 if buf.endswith(b"\n") else 0)
         preheader[3] = (len(buf) >> 8) & 0xFF  # allows for 65535 message length
         preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
         if qos:
@@ -200,12 +202,16 @@ class Client:
                 raise TypeError("Header has to be bytearray")
             else:
                 header = ubinascii.hexlify(header)
-        gc.collect()
         while self._tx_mid != mid or self._ok is False:
-            await asyncio.sleep_ms(50)  # wait until the mid is scheduled to be sent, keeps messages in order
+            # keeps order even with multiple writes and waits for connection to be ok
+            await asyncio.sleep_ms(50)
         await self._write(preheader, header, buf, qos, mid)
 
     def close(self):
+        """
+        Close the connection. Closes the socket.
+        :return:
+        """
         self._close()  # Close socket and WDT
         self._feed(WDT_CANCEL)
 
@@ -213,6 +219,11 @@ class Client:
 
     # May be overridden e.g. to provide timeout (asyncio.wait_for)
     async def bad_wifi(self):
+        """
+        Called if the initial wifi connection is not possible.
+        Subclass to implement a solution.
+        :return:
+        """
         if not self._ssid:
             raise OSError('No initial WiFi connection.')
         s = self._sta_if
@@ -229,6 +240,11 @@ class Client:
                 break
 
     async def bad_server(self):
+        """
+        Called if the initial connection to the server was not possible.
+        Subclass to implement a solution.
+        :return:
+        """
         await asyncio.sleep(0)
         raise OSError('No initial server connection.')
 
@@ -319,6 +335,7 @@ class Client:
         t = utime.ticks_ms()
         self._verbose and print('Checking WiFi stability for {}ms'.format(2 * self._to))
         # Timeout ensures stable WiFi and forces minimum outage duration
+        # Also ensures that the server recognizes the outage
         while s.isconnected() and utime.ticks_diff(utime.ticks_ms(), t) < 2 * self._to:
             await asyncio.sleep(1)
             self._feed(0)
@@ -377,7 +394,7 @@ class Client:
                     await self._send(b"\n")
                 except OSError:
                     self._verbose and print("Sending id failed")
-                    if init:
+                    if init: # another application could run on this port and reject messages
                         await self.bad_server()
                 else:
                     _keepalive = self._keepalive()
@@ -418,7 +435,7 @@ class Client:
                     self._verbose and print("Got ack mid", mid)
                     self._acks_pend.discard(mid)
                     continue  # All done
-                    # Old message still pending. Discard new one peer will re-send.
+                # Old message still pending. Discard new one peer will re-send.
                 if self._evread.is_set() and preheader[4] & 0x01 == 1:  # only qos are re-send
                     self._verbose and print("Dumping new message", self._evread.value())
                     continue
@@ -435,6 +452,8 @@ class Client:
             self._evfail.set('reader fail')  # ._run cancels other coros
 
     async def _sendack(self, mid):
+        if self._ok is False:
+            return
         preheader = bytearray(5)
         preheader[0] = mid
         preheader[1] = preheader[2] = preheader[3] = 0
@@ -456,13 +475,14 @@ class Client:
     # Read a line from nonblocking socket: reads can return partial data which
     # are joined into a line. Blank lines are keepalive packets which reset
     # the timeout: _readline() pauses until a complete line has been received.
-    async def _readline(self):
+    async def _readline(self) -> (bytearray, bytearray, str):
         led = self._led
         line = None
         preheader = None
         header = None
         start = utime.ticks_ms()
         while True:
+            # get the length of the message part to read exactly what is needed.
             if preheader is None:
                 cnt = 10
             elif header is None and preheader[1] != 0:
@@ -475,10 +495,9 @@ class Client:
             else:
                 cnt = 1  # only newline-termination missing
             d = await self._read_small(cnt, start)
-            # d is not None and print("read small got", d, cnt)
-            if d is None:
+            if d is None:  # keepalive or EOL
                 self._ok = True
-                if line is not None:
+                if line is not None:  # EOL
                     return preheader, header, line.decode()
                 line = None
                 preheader = None
@@ -507,7 +526,14 @@ class Client:
             else:
                 raise OSError  # got unexpected characters instead of \n
 
-    async def _read_small(self, cnt, start):
+    async def _read_small(self, cnt, start) -> bytes:
+        """
+        Read exactly the amount of bytes requested.
+        Saves RAM allocations and conversion time.
+        :param cnt: int
+        :param start: float, starting time for timeout
+        :return: bytes
+        """
         m = b''
         rcnt = cnt
         while True:
