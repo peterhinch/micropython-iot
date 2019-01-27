@@ -223,9 +223,12 @@ class Client:
                     await asyncio.sleep_ms(50)
                 if mid in self._acks_pend:  # wait for ACK for one timeout period
                     print(utime.ticks_ms(), "ack not received")
-                    self._evfail.set('timeout ACK')  # timeout, reset connection and try again
-                    while self._ok:
-                        await asyncio.sleep_ms(self._tim_short)
+                    # self._evfail.set('timeout ACK')  # timeout, reset connection and try again
+                    # while self._ok:
+                    #    await asyncio.sleep_ms(self._tim_short)
+                    # Could theoretically result in a deadlock of reconnects with
+                    # multiple concurrent writes active
+                    # TODO: Test resilience without reconnects
                     continue
                 if self._mcw is False:
                     # if mcw are not allowed, let next coro write only after receiving an ACK

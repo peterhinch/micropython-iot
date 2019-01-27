@@ -386,8 +386,8 @@ class Connection:
                 while mid in self._acks_pend and time.time() < end:
                     await asyncio.sleep(0.05)
                 if mid in self._acks_pend:
-                    self._verbose and print("Timeout or ack mid mismatch, closing connection")
-                    self._close()
+                    self._verbose and print("Timeout or ack mid mismatch")
+                    # self._close() Could result in deadlock of reconnects with multiple concurrent writes
                     await asyncio.sleep(1)
                     continue
                 if self._mcw is False:  # no ACK here as ACK is qos False
