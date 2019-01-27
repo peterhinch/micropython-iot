@@ -278,6 +278,7 @@ class Client:
                     if init:
                         await self.bad_server()
                     self._sock.close()
+                    await asyncio.sleep(1)  # prevents spamming "WIFI OK" if verbose and server down
                     continue  # temporary server outage?
             self._sock.setblocking(False)
             # Start reading before server can send: can't send until it
