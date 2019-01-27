@@ -282,7 +282,7 @@ class Connection:
                     # Strings from this point
                     l = istr.split('\n')
                     istr = l.pop()  # '' unless partial line
-                    self._process_str(l)  # Discard ka's
+                    self._process_str(l)
 
     def _process_str(self, l):
         l = [x for x in l if x]  # Discard ka's
