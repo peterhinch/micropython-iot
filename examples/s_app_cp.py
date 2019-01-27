@@ -48,7 +48,6 @@ class App:
                 continue
             # Receives [restart count, uptime in secs, mem_free]
             print('Got', self.data, 'from remote', self.client_id)
-            await self.conn.writeline(json.dumps(self.data))
 
     # Send
     # [approx app uptime in secs/5, received client uptime, received mem_free]
