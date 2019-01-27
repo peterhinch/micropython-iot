@@ -417,9 +417,9 @@ class Client:
                 if preheader[4] == 0x2C:  # ACK
                     self._verbose and print("Got ack mid", mid)
                     self._acks_pend.discard(mid)
-                    continue # All done
-                # Old message still pending. Discard new one peer will re-send.
-                if self._evread.is_set():
+                    continue  # All done
+                    # Old message still pending. Discard new one peer will re-send.
+                if self._evread.is_set() and preheader[4] & 0x01 == 1:  # only qos are re-send
                     self._verbose and print("Dumping new message", self._evread.value())
                     continue
                 # Discard dupes. mid == 0 : Server has power cycled
