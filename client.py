@@ -336,14 +336,17 @@ class Client:
                     self._verbose and print("Got ack mid", mid)
                     self._acks_pend.discard(mid)
                     continue  # All done
-                # Old message still pending. Discard new one peer will re-send.
-                if self._evread.is_set() and preheader[4] & 0x01 == 1:  # only qos are re-send
-                    self._verbose and print("Dumping new message", self._evread.value())
-                    continue
                 # Discard dupes. mid == 0 : Server has power cycled
                 if not mid:
                     isnew(-1)  # Clear down rx message record
                 if isnew(mid):
+                    # Old message still pending. Discard new one peer will re-send.
+                    if self._evread.is_set():
+                        if preheader[4] & 0x01 == 1:  # only qos are re-send
+                            self._verbose and print("Dumping new message", header, line)
+                            continue
+                        else:
+                            self._verbose and print("Dumping old message", self._evread.value())
                     self._evread.set((header, line))
                 if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
                     self._loop.create_task(self._sendack(mid))
