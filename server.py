@@ -187,7 +187,7 @@ class Connection:
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
         self._acks_pend = set()  # ACKs which are expected to be received
-        self._tx_mid = -1  # sent mid, used for keeping messages in order
+        self._tx_mid = 0  # sent mid, used for keeping messages in order
 
         loop.create_task(self._read(init_str))
         loop.create_task(self._keepalive())
@@ -347,7 +347,7 @@ class Connection:
             preheader[4] |= 0x01  # qos==True, request ACK
         mid = preheader[0]
         preheader = ubinascii.hexlify(preheader).decode()
-        while self._tx_mid + 1 != mid:
+        while self._tx_mid != mid:
             await asyncio.sleep(0.05)
         fstr = "{}{}{}" if line.endswith("\n") else "{}{}{}\n"
         buf = fstr.format(preheader, "" if header is None else ubinascii.hexlify(header).decode(), line)
@@ -359,7 +359,7 @@ class Connection:
         while True:
             ok = False
             while not ok:
-                if self._verbose and self._sock is None:
+                if self._verbose and not self():
                     print('Writer Client:', self._cl_id, 'awaiting OK status')
                 while self._sock is None:
                     await asyncio.sleep(0.05)
