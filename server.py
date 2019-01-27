@@ -114,7 +114,6 @@ class Connection:
             verbose and print("Wrong protocol")
             return
         client_id = line[10:]
-        print("Got client_id", preheader, client_id)
         verbose and print('Got connection from client', client_id)
         if preheader[4] == 0xFF:
             verbose and print("Reconnected client", client_id)
@@ -287,7 +286,9 @@ class Connection:
 
     def _process_str(self, l):
         l = [x for x in l if x]  # Discard ka's
-        assert len(l) > 0, 'Zero length string in ._process_str.'
+        # assert len(l) > 0, 'Zero length string in ._process_str.'
+        if len(l) == 0:  # don't throw an exception, just ignore it
+            return
         ret = []
         for i in range(0, len(l)):  # should actually always have only one entry
             line = l[i]
@@ -297,7 +298,6 @@ class Connection:
                 mid = preheader[0]
                 if preheader[4] == 0x2C:  # ACK
                     self._acks_pend.discard(mid)
-                    print("Got ACK mid", mid)
                     continue
                 if not mid:
                     isnew(-1, self._newlist)
@@ -308,10 +308,9 @@ class Connection:
                     else:
                         header = None
                         line = line[10:]
-                    print("Got message", preheader, header, line)
                     ret.append((header, line))  # API change, also line is not new-line terminated
                 else:
-                    print("Dumped dupe mid", mid)
+                    self._verbose and print("Dumped dupe mid", mid)
                 if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
                     preheader[1] = preheader[2] = preheader[3] = 0
                     preheader[4] = 0x2C  # ACK
@@ -319,6 +318,7 @@ class Connection:
                     buf = fstr.format(ubinascii.hexlify(preheader).decode())
                     self._loop.create_task(self._sendack(buf, mid=preheader[0]))
                     # ACK does not get qos as server will resend message if outage occurs
+        self._lines += ret
 
     async def _sendack(self, buf, mid):
         await self._vwrite(buf, qos=False, mid=mid, ack=True)
@@ -355,8 +355,6 @@ class Connection:
         self._verbose and print('Sent data', buf)
 
     async def _vwrite(self, buf, mid, qos, ack=False):  # Verbatim write: add no message ID
-        if buf is None:
-            print("vwrite", buf, mid, qos)
         repeat = False
         while True:
             ok = False
@@ -372,7 +370,8 @@ class Connection:
                     if qos:
                         self._acks_pend.add(mid)
                     ok = await self._send(buf)  # Fail clears status
-            if ack is False and repeat is False and self._mcw is True:
+            if ack is False and repeat is False and self._mcw is True and mid is not None:
+                # mid None is keepalive
                 # on repeat does not wait for ticket or modify it
                 # allows next write to start before receiving ACK
                 self._tx_mid += 1
@@ -388,7 +387,7 @@ class Connection:
                     self._close()
                     await asyncio.sleep(1)
                     continue
-                if self._mcw is False:
+                if self._mcw is False:  # no ACK here as ACK is qos False
                     # if mcw are not allowed, let next coro write only after receiving an ACK
                     # to ensure that all qos messages are kept in order.
                     self._tx_mid += 1
