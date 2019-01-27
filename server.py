@@ -233,10 +233,10 @@ class Connection:
             return h, l
         # Must wait for data
         while True:
-            if self._verbose and not self():
-                print('Reader Client:', self._cl_id, 'awaiting OK status')
-            await self._status_coro()
-            self._verbose and print('Reader Client:', self._cl_id, 'OK')
+            if not self():  # Outage
+                self._verbose and print('Client:', self._cl_id, 'awaiting connection')
+                await self._status_coro()
+                self._verbose and print('Client:', self._cl_id, 'connected')
             while self():
                 h, l = self._readline()
                 if l is not None:
@@ -285,7 +285,7 @@ class Connection:
                     # Strings from this point
                     l = istr.split('\n')
                     istr = l.pop()  # '' unless partial line
-                    self._process_str(l)  # Discard ka's
+                    self._process_str(l)
 
     def _process_str(self, l):
         l = [x for x in l if x]  # Discard ka's
