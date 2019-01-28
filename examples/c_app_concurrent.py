@@ -1,4 +1,4 @@
-# c_app.py Client-side application demo
+# c_app_concurrent.py Client-side application test
 
 # Released under the MIT licence.
 # Copyright (C) Peter Hinch 2019
@@ -48,25 +48,31 @@ class App:
 
     # Send [approx application uptime in secs, (re)connect count]
     async def writer(self):
-        import utime
         self.verbose and print('Started writer')
-        data = [0, 0, 0]
+        data = [0, 0, 0, 0]
         count = 0
         while True:
+            await self.cl  # prevent outage from creating queue overflow
             data[0] = self.cl.connects
-            data[1] = count
-            count += 1
-            gc.collect()
             data[2] = gc.mem_free()
-            print('Sent', data, 'to server app\n')
-            # .writeline() behaves as per .readline()
-            st = utime.ticks_ms()
-            await self.cl.writeline(ujson.dumps(data))
-            latency = utime.ticks_ms() - st
-            self.latency_added += latency
-            self.count += 1
-            print("Latency:", latency, "Avg Latency:", self.latency_added / self.count)
+            for i in range(5):
+                data[1] = count
+                count += 1
+                gc.collect()
+                data[3] = i
+                loop.create_task(self._con_write(ujson.dumps(data)))
             await asyncio.sleep(2)
+            print("Avg Latency:", self.latency_added / self.count)
+            await asyncio.sleep(3)
+
+    async def _con_write(self, data):
+        import utime
+        print('Sent', data, 'to server app\n')
+        st = utime.ticks_ms()
+        await self.cl.writeline(data)
+        latency = utime.ticks_ms() - st
+        self.latency_added += latency
+        self.count += 1
 
     def close(self):
         self.cl.close()

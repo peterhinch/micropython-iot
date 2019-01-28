@@ -299,7 +299,7 @@ class Connection:
                 # Discard dupes: get message ID
                 preheader = bytearray(ubinascii.unhexlify(line[:10].encode()))
                 mid = preheader[0]
-                if preheader[4] == 0x2C:  # ACK
+                if preheader[4] & 0x2C == 0x2C:  # ACK
                     self._acks_pend.discard(mid)
                     continue
                 if not mid:

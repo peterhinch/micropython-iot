@@ -335,7 +335,7 @@ class Client:
             while True:
                 preheader, header, line = await self._readline()  # OSError on fail
                 mid = preheader[0]
-                if preheader[4] == 0x2C:  # ACK
+                if preheader[4] & 0x2C == 0x2C:  # ACK
                     self._verbose and print("Got ack mid", mid)
                     self._acks_pend.discard(mid)
                     continue  # All done
