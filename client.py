@@ -15,10 +15,12 @@ gc.collect()
 
 import network
 import utime
-
+import machine
+from . import gmid, isnew, launch, Event, Lock, SetByte, wdt_feed  # __init__.py
 gc.collect()
-from . import gmid, isnew, launch, Event, Lock, SetByte  # __init__.py
-getmid = gmid()  # Message ID generator
+
+# Message ID generator
+getmid = gmid()
 gc.collect()
 
 
@@ -135,15 +137,17 @@ class Client:
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
         self._verbose and print('Connecting to WiFi')
-        s.connect()  # Kevin: OSError trapping needed here?
+        s.connect()
         # Break out on fail or success.
         while s.status() == network.STAT_CONNECTING:
             await asyncio.sleep(1)
+            wdt_feed(5)
         t = utime.ticks_ms()
         self._verbose and print('Checking WiFi stability for {}ms'.format(2 * self._to))
         # Timeout ensures stable WiFi and forces minimum outage duration
         while s.isconnected() and utime.ticks_diff(utime.ticks_ms(), t) < 2 * self._to:
             await asyncio.sleep(1)
+            wdt_feed(5)
 
     async def _run(self, loop):
         # ESP8266 stores last good connection. Initially give it time to re-establish
@@ -191,7 +195,8 @@ class Client:
                 self._ok = False
                 asyncio.cancel(_reader)
                 asyncio.cancel(_keepalive)
-                await asyncio.sleep(1)  # wait for cancellation
+                await asyncio.sleep_ms(0)  # wait for cancellation
+                wdt_feed(10)  # _concb might block (I hope not)
                 if self._concb is not None:
                     # apps might need to know if they lost connection to the server
                     launch(self._concb, False, *self._concbargs)
@@ -199,9 +204,11 @@ class Client:
                 init = False
                 self.close()  # Close socket
                 s.disconnect()
+                wdt_feed((self._to * 4) // 1000)
                 await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage
                 while s.isconnected():
                     await asyncio.sleep(1)
+                    wdt_feed(5)
 
     async def _reader(self):  # Entry point is after a (re) connect.
         c = self.connects  # Count successful connects
@@ -252,8 +259,10 @@ class Client:
                 self._ok = True  # Got at least 1 packet
                 if len(line) > 1:
                     return line
+                # Got a keepalive: discard, reset timers, toggle LED.
+                wdt_feed(5)  # Hold off WDT for 5s
                 line = b''
-                start = utime.ticks_ms()  # Blank line is keepalive
+                start = utime.ticks_ms()
                 if self._led is not None:
                     self._led(not self._led())
             d = self._sock.readline()

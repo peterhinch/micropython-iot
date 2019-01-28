@@ -177,6 +177,8 @@ incorporate `uasyncio` as frozen bytecode. Daily builds do not. Alternatively
 to maximise free RAM, firmware can be built from source, freezing `uasyncio`,
 `client.py` and `__init__.py` as bytecode.
 
+If a release build is used V1.9.10 or later is strongly recommended.
+
 Note that if `uasyncio` is to be installed it should be acquired from 
 [official micropython-lib](https://github.com/micropython/micropython-lib). It
 should not be installed from PyPi using `upip`: the version on PyPi is
@@ -215,10 +217,10 @@ not like packages that have a "-" character in their name.
 
 On the ESP8266 a directory `/pyboard/micropython_iot` should be created and the
 following files copied to it:
- 1. `client.mpy`
+ 1. `client.py`
  2. `__init__.py`
-Note that the ESP8266 has insufficient RAM to compile `client.py` so the cross
-compiled `client.mpy` must be used.
+Note that under old firmware builds the ESP8266 has insufficient RAM to compile
+`client.py` so the cross compiled `client.mpy` must be used.
 
 To install the demos the following directories and their contents should be
 copied to `/pyboard/micropython_iot`:
@@ -232,7 +234,7 @@ commands:
 ```
 rshell -p /dev/ttyS3  # adapt the port to your situation
 mkdir /pyboard/micropython_iot   # create directory on your esp8266  
-cp client.mpy __init__.py /pyboard/micropython_iot/
+cp client.py __init__.py /pyboard/micropython_iot/
 cp -r examples /pyboard/micropython_iot/
 cp -r qos /pyboard/micropython_iot/
 cp -r example_remote_control /pyboard/micropython_iot/
