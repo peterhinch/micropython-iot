@@ -21,7 +21,6 @@ except ImportError:
     import ujson as json
 
 from micropython_iot import server
-from .config import config as cfg
 
 
 class App:
@@ -62,9 +61,9 @@ class App:
 def run():
     loop = asyncio.get_event_loop()
     clients = {'1', '2', '3', '4'}
-    apps = [App(loop, str(n)) for n in clients]  # Accept 4 clients with ID's 1-4
+    apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, clients, True, cfg[0], cfg[2]))
+        loop.run_until_complete(server.run(loop, clients, True))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

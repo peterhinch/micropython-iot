@@ -7,16 +7,16 @@
 
 # config list is shared by Pyboard and by server
 # config elements by list index:
-# 0. Port (integer).
+# 0. Port (integer). Default 8123.
 # 1. Server IP (string).
-# 2. Server timeout in ms (int). Must == TIMEOUT in server's local.py.
+# 2. Server timeout in ms (int). Default 1500.
 # 3. Send reports every N seconds (0: never) (int).
 # 4. SSID (str).
 # 5. Password (str).
 # Use empty string ('') in  SSID and PW to only connect to the WLAN which the
 # ESP8266 already "knows".
-
-config = [8123, '192.168.0.42', 1500, 10, 'misspiggy', '6163VMiqSTyx']
+# If Port or Timeout are changed, these values must be passed to server.run()
+config = [8123, '192.168.0.42', 1500, 10, 'MY_WIFI_SSID', 'PASSWORD']
 
 try:
     from pyb import I2C  # Only pyb supports slave mode

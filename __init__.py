@@ -7,31 +7,6 @@ try:
     import uasyncio as asyncio
 except ImportError:
     import asyncio
-try:
-    import machine
-except ImportError:  # Running on server
-    pass
-else:  # ESP8266 WDT
-    # Software WDT
-    def wdt():
-        cnt = 0
-        run = False  # Disable until 1st feed
-        def inner(feed=0):
-            nonlocal cnt, run
-            if feed > 0:  # User call
-                cnt = feed
-                run = True
-            elif feed < 0:
-                run = False
-            elif run:  # Callback and is running.
-                cnt -= 1
-                if cnt <= 0:
-                    machine.reset()
-        return inner
-
-    wdt_feed = wdt()
-    wdt_timer = machine.Timer(-1)
-    wdt_timer.init(period=1000, mode=machine.Timer.PERIODIC, callback=lambda t:wdt_feed())
 
 type_gen = type((lambda: (yield))())  # Generator type
 

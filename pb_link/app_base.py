@@ -74,9 +74,10 @@ class AppBase:
                 raise ValueError('Unknown header:', h)
 
     # **** API ****
-    async def write(self, line, qos=True):
+    async def write(self, line, qos=True, wait=True):
+        ch = chr(0x30 + ((qos << 1) | wait))  # Encode args
         fstr =  '{}{}' if line.endswith('\n') else '{}{}\n'
-        line = fstr.format('1' if qos else '0', line)
+        line = fstr.format(ch, line)
         async with self.wlock:  # Not during a resync.
             await self.swriter.awrite(line)
 

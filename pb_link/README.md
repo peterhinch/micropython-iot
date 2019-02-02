@@ -6,7 +6,7 @@ fixed configuration. All client-side application code resides on the client.
 
 Communication between the client and the ESP8266 uses I2C. The client must be
 capable of running I2C slave mode. This includes STM boards such as the
-Pyboard. In this doc the client device is referred to as the Pyboard.
+Pyboard V1.x. In this doc the client device is referred to as the Pyboard.
 
  0. [IOT design for clients lacking a LAN interface](./README.md#0-iot-design-for-clients-lacking-a-lan-interface)  
  1. [Wiring](./README.md#1-wiring)  
@@ -67,8 +67,7 @@ files from `micropython_iot/pb_link` to it:
  2. `asi2c_i.py`
  3. `config.py`
  4. `pb_client.py`
- 5. `aswitch.py`
- 6. `__init__.py`
+ 5. `__init__.py`
 
 Edit `micropython_iot/pb_link/config.py` to match local conditions, notably
 server IP address and WiFi credentials. WiFi credentials may be empty strings
@@ -81,32 +80,30 @@ import micropython_iot.pb_link.pb_client
 
 #### On the ESP8266
 
-The current release build V1.9.4 is too old to support this application. This
-means that a build must be compiled with `uasyncio` as frozen bytecode. For
-those not wishing to compile a build, the provided `firmware-combined.bin` may
-be installed with the following commands:
+For reliable operation this must be compiled as frozen bytecode. For those not
+wishing to compile a build, the provided `firmware-combined.bin` may be
+installed with the following commands:
 
 ```
 esptool.py  --port /dev/ttyUSB0 erase_flash
 esptool.py --port /dev/ttyUSB0 --baud 115200 write_flash --verify --flash_size=detect -fm dio 0 firmware-combined.bin 
 ```
+This build is designed to start on boot so no further steps are required.
 
-If you compile your own build follow these steps at the REPL:  
-Create a directory `/pyboard/micropython_iot`. Copy the following
-files to this directory:
+To compile your own build your `modules` directory must contain (in addition to
+its normal contents) an installation of `uasyncio`. See notes on this in the
+[main readme](../README.md#31-installation). Under `modules` create a
+directory `/pyboard/micropython_iot`. Copy the following files to it:
  1. `__init__.py`
- 2. `client.mpy`
+ 2. `client.py`
 
-Copy the directory `esp_link` with its contents to `/pyboard/micropython_iot`.
+Copy the directory `esp_link` with its contents to the `micropython_iot`
+directory. Compile and install the build.
 
 Edit `/pyboard/main.py` to read:
 ```python
 from micropython_iot.esp_link import esp_link
 ```
-
-There is currently an issue which I am investigating where the ESP8266 crashes
-if it has no stored WiFi credentials. The workround is to access the REPL and
-connect to your local network before running the demo.
 
 ### Dependency
 
@@ -138,12 +135,14 @@ are common to all Pyboards which communicate with a single server. This will
 require adapting for local conditions. The `config` list has the following
 entries:
 
- 0. Port (integer).
- 1. Server IP (string).
- 2. Server timeout in ms (int). Must == TIMEOUT in server's local.py.
- 3. Send reports every N seconds (0: never) (`int`).
- 4. SSID (str).
- 5. Password (str).
+ 0. Port. `int`. Default 8123. If changing this, the server application must
+ specify the same value to `server.run`.
+ 1. Server IP. `str`.
+ 2. Server timeout in ms `int`. Default 1500. If changing this, the server
+ application must specify the same value to `server.run`.
+ 3. Report frequency `int`. Report to Pyboard every N seconds (0: never).
+ 4. SSID. `str`.
+ 5. Password. `str`.
 
 If having a file with credential details is unacceptable an empty string ('')
 may be used in the SSID and Password fields. In this case the ESP8266 will
@@ -203,36 +202,45 @@ Constructor args:
 
 Coroutines:
  1. `readline` Read a newline-terminated line from the server.
- 2. `write`  Args: `line`, `qos=True`. Write a line to the server. `line` holds
- a line of text. If a terminating newline is not present one will be supplied.  
+ 2. `write`  Args: `line`, `qos=True`, `wait=True`. Write a line to the server.
+ `line` holds a line of text. If a terminating newline is not present one will
+ be supplied.  
  If `qos` is set, the system guarantees delivery. If it is clear messages may
- (rarely) be lost in the event of an outage.
+ (rarely) be lost in the event of an outage.__
+ If `qos` and `wait` are both set, a `write` coroutine will pause before
+ sending until any other pending instances have received acknowledge packets.
+ This is discussed [in the main README](../README.md#7-quality-of-service).
  3. `reboot` Physically reboot the ESP8266. The system will resynchronise and
  resume operation.
 
 Synchronous methods:
  1. `close` Shuts down the Pyboard/ESP8266 interface.
 
-Asynchronous bound methods. These may be overridden in derived classes:
+Asynchronous bound methods. These may be overridden in derived classes to
+modify the default behaviour.
 
- 1. `bad_wifi` No args. Awaited if WiFi can't connect in 4 seconds from boot.
+ 1. `bad_wifi` No args. This runs on startup and attempts to connect to WiFi
+ using credentials stored in flash. If this fails, it attempts to connect using
+ credentials in the `config` list. If this fails an `OSError` is raised.
  2. `bad_server` No args. Awaited if server refuses an initial connection.
+ Raises an `OSError`.
  3. `report` Regularly launched if reports are requested in the config.  It
  receives a 3-list as an arg: `[connect_count, report_no, mem_free]` which
- describes the ESP8266 status.
+ describes the ESP8266 status. Prints the report.
  4. `server_ok` Launched whenever the status of the link to the server changes,
  by a WiFi server outage starting or ending. Receives a single boolean arg `up`
- being the new status.
-
-Behaviour of the `AppBase` default bound methods: the first two raise 
-`OSError`s with a suitable message, the others print a message and quit.
+ being the new status. Prints a message.
 
 If a WiFi or server outage occurs, `readline` and `write` coroutines will pause
 for the duration.
 
+The `bad_wifi` and `bad_server` coros run only on initialisation. Subsequent
+WiFi and server outages are handled transparently.
+
 The `conn_id` constructor arg defines the connection ID used by the server-side
 application, ensuring that the Pyboard app communicates with its matching
-server app. ID's must be newline-terminated and must not include other newlines.
+server app. ID's may be any string but newline characters should not be present
+except (optionally) as the last character.
 
 Subclasses must define a synchronous `start` bound method. This takes no args.
 Typically it launches user coroutines.
@@ -256,14 +264,15 @@ cab be verified with a serial connection to the ESP8266 and issuing `ctrl-c`.
 
 # 6. Quality of service
 
-In MQTT parlance the Pyboard link operates at qos==2: messages will be delivered
-exactly once. In rare circumstances immediately after an outage, messages may be
-delivered out of order.
+Issues relating to message integrity and latency are discussed
+[in the main README](../README.md#7-quality-of-service).
 
 Note that if the ESP8266 actually crashes all bets are off. The system will
 recover but message loss may occur. Two observations:
- 1. In my extensive testing crashes only occurred owing to electrical causes
- (a poor quality power supply).
- 2. Guaranteed qos > 0 may be achieved at application level using response
- messages. When designing such a system bear in mind that response messages are
- themselves subject to non-guaranteed delivery.
+ 1. In extensive testing crashes were very rare and may have had electrical
+ causes such as noise on the power line. Only one crash was observed when
+ powered by a battery.
+ 2. A quality of service guarantee, even in the presence of crashes, may be
+ achieved at application level using response messages. When designing such a
+ system bear in mind that response messages may themselves be lost in the event
+ of a crash.

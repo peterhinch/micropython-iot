@@ -19,7 +19,6 @@ try:
 except ImportError:
     import ujson as json
 from micropython_iot import server
-from .local import TIMEOUT, PORT
 
 
 class App:
@@ -80,7 +79,7 @@ def run():
     loop = asyncio.get_event_loop()
     app = App(loop, 'qos')
     try:
-        loop.run_until_complete(server.run(loop, {'qos'}, True, PORT, TIMEOUT))
+        loop.run_until_complete(server.run(loop, {'qos'}, True))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

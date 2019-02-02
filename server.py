@@ -31,7 +31,6 @@ else:
     Lock = asyncio.Lock
 
 from . import gmid
-getmid = gmid()  # Message ID generator
 
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
@@ -167,6 +166,7 @@ class Connection:
             print('Unknown client {} has connected. Expected {}.'.format(
                 client_id, Connection._expected))
 
+        self._getmid = gmid()  # Message ID generator
         # ._wr_pause set after initial or subsequent client connection. Cleared
         # after 1st keepalive received. We delay sending anything other than
         # keepalives while ._wr_pause is set
@@ -294,9 +294,12 @@ class Connection:
             await self._vwrite(None)
             await asyncio.sleep(self._tim_ka)
 
-    async def write(self, line, qos=True):
+    async def write(self, line, qos=True, wait=True):
+        if qos and wait:
+            while self._acks_pend:
+                await asyncio.sleep(TIM_TINY)
         fstr =  '{:02x}{}' if line.endswith('\n') else '{:02x}{}\n'
-        mid = next(getmid)
+        mid = next(self._getmid)
         self._acks_pend.add(mid)
         # ACK will be removed from ._acks_pend by ._read
         line = fstr.format(mid, line)  # Local copy

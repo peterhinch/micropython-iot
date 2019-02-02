@@ -6,60 +6,52 @@
 
 import gc
 import uasyncio as asyncio
-import network
 import time
-
+gc.collect()
+import ujson
+from micropython import const
+from machine import Pin, I2C
 gc.collect()
 
 from . import asi2c
-gc.collect()
-from machine import Pin, I2C
-
-import sys
-sys.path.append(sys.path.pop(0))  # ******* TEMPORARY *******
-
 from micropython_iot import client
-import ujson
 gc.collect()
+
+ID = const(0)  # Config list index
+PORT = const(1)
+SERVER = const(2)
+TIMEOUT = const(3)
+REPORT = const(4)
+SSID = const(5)
+PW = const(6)
 
 class LinkClient(client.Client):
-    def __init__(self, loop, config, swriter, server_status, verbose):
-        super().__init__(loop, config[0], config[2], config[1], config[3],
-                         connected_cb=server_status, verbose=verbose)
+    def __init__(self, loop, config, swriter, verbose):
+        super().__init__(loop, config[ID], config[SERVER],
+                         config[SSID], config[PW],
+                         config[PORT], config[TIMEOUT],
+                         conn_cb=self.conn_cb, verbose=verbose)
         self.config = config
         self.swriter = swriter
 
     # Initial connection to stored network failed. Try to connect using config
     async def bad_wifi(self):
-        self._verbose and print('bad_wifi started')
-        config = self.config
-        sta_if = network.WLAN(network.STA_IF)  # was self._sta_if
-        ssid = config[5]
-        pw = config[6]
-        # Either ESP does not 'know' this WLAN or it needs time to connect.
-        if ssid == '':  # No SSID supplied: can only keep trying
-            self._verbose and print('Connecting to ESP8266 stored network...')
-            ssid = 'stored network'
-        else:
-            # Try to connect to specified WLAN. ESP will save details for
-            # subsequent connections.
-            self._verbose and print('Connecting to specified network', ssid, pw)
-            sta_if.connect(ssid, pw)
-        self._verbose and print('Awaiting WiFi.')
-        for _ in range(20):
-            await asyncio.sleep(1)
-            if sta_if.isconnected():
-                return
-
-        await self.swriter.awrite('b\n')
-        # Message to Pyboard and REPL. Crash the board. Pyboard
-        # detects, can reboot and retry, change config, or whatever
-        raise ValueError("Can't connect to {}".format(ssid))  # croak...
+        try:
+            await asyncio.wait_for(super().bad_wifi(), 20)
+        except asyncio.TimeoutError:
+            await self.swriter.awrite('b\n')
+            # Message to Pyboard and REPL. Crash the board. Pyboard
+            # detects, can reboot and retry, change config, or whatever
+            raise ValueError("Can't connect to {}".format(self.config[SSID]))  # croak...
 
     async def bad_server(self):
         await self.swriter.awrite('s\n')
         raise ValueError("Server {} port {} is down.".format(
-            self.config[2], self.config[1]))  # As per bad_wifi: croak...
+            self.config[SERVER], self.config[PORT]))  # As per bad_wifi: croak...
+
+    # Callback when connection status changes
+    async def conn_cb(self, status):
+        await self.swriter.awrite('u\n' if status else 'd\n')
 
 
 class App:
@@ -78,56 +70,40 @@ class App:
     async def start(self, loop):
         await self.chan.ready()  # Wait for sync
         self.verbose and print('awaiting config')
-        while True:
-            line = await self.sreader.readline()
-            # Checks are probably over-defensive. No fails now code is fixed.
-            try:
-                config = ujson.loads(line)
-            except ValueError:
-                self.verbose and print('JSON error. Got:', line)
-            else:
-                if isinstance(config, list) and len(config) == 8 and config[-1] == 'cfg':
-                    break  # Got good config
-                else:
-                    self.verbose and print('Got bad config', line)
+        line = await self.sreader.readline()
+        config = ujson.loads(line)
 
         self.verbose and print('Setting client config', config)
-        self.cl = LinkClient(loop, config, self.swriter,
-                             self.server_status, self.verbose)
+        self.cl = LinkClient(loop, config, self.swriter, self.verbose)
         self.verbose and print('App awaiting connection.')
         await self.cl
         loop.create_task(self.to_server(loop))
         loop.create_task(self.from_server())
         loop.create_task(self.crashdet())
-        if config[4]:
-            loop.create_task(self.report(config[4]))
+        t_rep = config[REPORT]  # Reporting interval (s)
+        if t_rep:
+            loop.create_task(self.report(t_rep))
 
     async def to_server(self, loop):
         self.verbose and print('Started to_server task.')
         while True:
             line = await self.sreader.readline()
             line = line.decode()
-            qos = line.startswith('1')
+            n = ord(line[0]) - 0x30  # Decode header to bitfield
             # Implied copy at start of write()
             # If the following pauses for an outage, the Pyboard may write
             # one more line. Subsequent calls to channel.write pause pending
             # resumption of communication with the server.
-            await self.cl.write(line[1:], qos=qos)
-            self.verbose and print('Sent', line[1:], 'to server app')
+            await self.cl.write(line[1:], qos=n & 2, wait=n & 1)
+            self.verbose and print('Sent', line[1:].rstrip(), 'to server app')
 
     async def from_server(self):
         self.verbose and print('Started from_server task.')
         while True:
             line = await self.cl.readline()
-            if line.startswith('\n'):
-                print('bad start')
-            else:
-                # Implied copy
-                await self.swriter.awrite(''.join(('n', line)))
-                self.verbose and print('Sent', line.encode('utf8'), 'to Pyboard app\n')
-
-    async def server_status(self, status):
-        await self.swriter.awrite('u\n' if status else 'd\n')
+            # Implied copy
+            await self.swriter.awrite('n{}'.format(line))
+            self.verbose and print('Sent', line.encode('utf8'), 'to Pyboard app\n')
 
     async def crashdet(self):
         while True:
@@ -144,7 +120,7 @@ class App:
             count += 1
             gc.collect()
             data[2] = gc.mem_free()
-            line = ''.join(('r', ujson.dumps(data), '\n'))
+            line = 'r{}\n'.format(ujson.dumps(data))
             await self.swriter.awrite(line)
 
     def close(self):

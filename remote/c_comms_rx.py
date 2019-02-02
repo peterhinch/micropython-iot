@@ -10,15 +10,16 @@ gc.collect()
 import ujson
 from machine import Pin
 
-from . import local_rx as local
+from . import local
 from micropython_iot import client
 
 
 class App:
-    def __init__(self, loop, my_id, server, port, timeout, verbose):
+    def __init__(self, loop, verbose):
         self.verbose = verbose
         self.led = Pin(2, Pin.OUT, value=1)  # LED for received data
-        self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, None)
+        self.cl = client.Client(loop, 'rx', local.SERVER,
+                                local.SSID, local.PW, verbose=verbose)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
@@ -39,7 +40,7 @@ class App:
 
 
 loop = asyncio.get_event_loop()
-app = App(loop, local.MY_ID, local.SERVER, local.PORT, local.TIMEOUT, True)
+app = App(loop, True)
 try:
     loop.run_forever()
 finally:

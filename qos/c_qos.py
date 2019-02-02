@@ -16,11 +16,12 @@ import urandom
 
 
 class App:
-    def __init__(self, loop, my_id, server, port, timeout, verbose):
+    def __init__(self, loop, verbose):
         self.verbose = verbose
-        self.timeout = timeout
         led = Pin(2, Pin.OUT, value=1)  # Optional LED
-        self.cl = client.Client(loop, my_id, server, port, timeout, None, None, verbose, led)
+        self.cl = client.Client(loop, local.MY_ID, local.SERVER,
+                                local.SSID, local.PW,
+                                verbose=verbose, led=led)
         self.tx_msg_id = 0
         self.dupes = 0  # Incoming dupe count
         self.missing = 0
@@ -75,7 +76,7 @@ class App:
 
 
 loop = asyncio.get_event_loop()
-app = App(loop, local.MY_ID, local.SERVER, local.PORT, local.TIMEOUT, True)
+app = App(loop, True)
 try:
     loop.run_forever()
 finally:
