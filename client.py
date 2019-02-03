@@ -269,6 +269,8 @@ class Client:
     async def _write(self, preheader, header, buf, qos, mid, ack=False):
         if buf is None:
             buf = b""
+        if not self._ok and ack is True:
+            return  # server will resend message
         repeat = False
         while True:
             # After an outage wait until something is received from server
@@ -452,7 +454,7 @@ class Client:
                             self._verbose and print("Dumping old message", self._evread.value())
                     self._evread.set((header, line))
                 if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
-                    self._loop.create_task(self._sendack(mid))
+                    await self._sendack(mid)
                 if c == self.connects:
                     self.connects += 1  # update connect count
         except OSError:
@@ -544,6 +546,8 @@ class Client:
         m = b''
         rcnt = cnt
         while True:
+            if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
+                raise OSError
             try:
                 d = self._sock.recv(rcnt)
             except OSError as e:
@@ -556,6 +560,7 @@ class Client:
                 raise OSError
             if d is None:  # Nothing received: wait on server
                 await asyncio.sleep_ms(0)
+                continue
             elif d == b"\n":
                 return None  # either EOF or keepalive
             elif d.startswith(b"\n"):  # keepalive at the start of the message
@@ -567,8 +572,6 @@ class Client:
                 return m
             else:
                 rcnt = cnt - len(m)
-            if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
-                raise OSError
 
     async def _send(self, d):  # Write a line to socket.
         start = utime.ticks_ms()
