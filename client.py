@@ -102,7 +102,7 @@ class Client:
         self._evfail = Event(100)  # 100ms pause
         self._evread = Event()  # Respond fast to incoming
         self._s_lock = Lock(100)  # For internal send conflict.
-
+        self._last_wr = utime.ticks_ms()
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
         self._ok = False  # Set after 1st successful read
@@ -303,9 +303,11 @@ class Client:
     async def _reader(self):  # Entry point is after a (re) connect.
         c = self.connects  # Count successful connects
         self._evread.clear()  # No data read yet
+        to = 2 * self._to  # Extend timeout on 1st pass for slow server
         try:
             while True:
-                line = await self._readline()  # OSError on fail
+                line = await self._readline(to)  # OSError on fail
+                to = self._to
                 mid = int(line[0:2], 16)
                 if len(line) == 3:  # Got ACK: remove from expected list
                     self._acks_pend.discard(mid)  # qos0 acks are ignored
@@ -326,22 +328,28 @@ class Client:
             self._evfail.set('reader fail')  # ._run cancels other coros
 
     async def _sendack(self, mid):
-        async with self._s_lock:
-            await self._send('{:02x}\n'.format(mid))
+        try:
+            async with self._s_lock:
+                await self._send('{:02x}\n'.format(mid))
+        except OSError:
+            self._evfail.set('sendack fail')  # ._run cancels other coros
 
     async def _keepalive(self):
         try:
             while True:
-                await asyncio.sleep_ms(self._tim_ka)
-                async with self._s_lock:
-                    await self._send(b'\n')
+                due = self._tim_ka - utime.ticks_diff(utime.ticks_ms(), self._last_wr)
+                if due <= 0:
+                    async with self._s_lock:
+                        await self._send(b'\n')
+                    continue
+                await asyncio.sleep_ms(due)
         except OSError:
             self._evfail.set('keepalive fail')
 
     # Read a line from nonblocking socket: reads can return partial data which
     # are joined into a line. Blank lines are keepalive packets which reset
     # the timeout: _readline() pauses until a complete line has been received.
-    async def _readline(self):
+    async def _readline(self, to):
         led = self._led
         line = b''
         start = utime.ticks_ms()
@@ -368,18 +376,18 @@ class Client:
                 line = d
             else:
                 line = b''.join((line, d))
-            if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
+            if utime.ticks_diff(utime.ticks_ms(), start) > to:
                 raise OSError
 
     async def _send(self, d):  # Write a line to socket.
         start = utime.ticks_ms()
-        nts = len(d)  # Bytes to send
-        ns = 0  # No. sent
-        while ns < nts:
-            n = self._sock.send(d)  # OSError if client closes socket
-            ns += n
-            if ns < nts:  # Partial write: trim data and pause
-                d = d[n:]
+        while d:
+            ns = self._sock.send(d)  # OSError if client closes socket
+            d = d[ns:]
+            if d:  # Partial write: pause
                 await asyncio.sleep_ms(20)
             if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
                 raise OSError
+        if platform == 'pyboard':  # Bug in socket?
+            await asyncio.sleep_ms(200)  # ESP is too slow to need this
+        self._last_wr = utime.ticks_ms()

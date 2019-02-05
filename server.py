@@ -276,8 +276,8 @@ class Connection:
     # messages and ACKs. Put messages into ._lines and remove ACKs from
     # ._acks_pend. Note messages in ._lines have no trailing \n.
     def _process_str(self, l):
+#        print('***** GOT *****', l)
         l = [x for x in l if x]  # Discard ka's
-        assert len(l) > 0, 'Zero length string in ._process_str.'
         self._acks_pend -= {int(x, 16) for x in l if len(x) == 2}
         lines = [x for x in l if len(x) != 2]  # Lines received
         if lines:
@@ -361,6 +361,12 @@ class Connection:
                     if (time.time() - start) > self._to_secs:
                         break
         else:
+            # The 0.2s delay is necessary otherwise messages can be lost if the
+            # app attempts to send them in quick succession. Also occurs on
+            # Pyboard D despite completely different hardware.
+            # Is it better to return immediately and delay subsequent writes?
+            # Should the delay be handled at a higher level?
+            await asyncio.sleep(0.2)  # Disallow rapid writes: result in data loss
             return True  # Success
         self._verbose and print('Write fail: closing connection.')
         self._close()
