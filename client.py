@@ -371,7 +371,7 @@ class Client:
             if d == b'':
                 raise OSError
             if d is None:  # Nothing received: wait on server
-                await asyncio.sleep_ms(100)
+                await asyncio.sleep_ms(0)  # TEST was 100ms
             elif line == b'':
                 line = d
             else:
