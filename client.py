@@ -23,6 +23,7 @@ import ubinascii
 
 gc.collect()
 from micropython import const
+
 WDT_SUSPEND = const(-1)
 WDT_CANCEL = const(-2)
 WDT_CB = const(-3)
@@ -35,8 +36,8 @@ gc.collect()
 
 
 class Client:
-    def __init__(self, loop, my_id, server, ssid='', pw='',
-                 port=8123, timeout=1500,
+    def __init__(self, loop, my_id, server, port=8123,
+                 ssid='', pw='', timeout=1500,
                  conn_cb=None, conn_cb_args=None,
                  verbose=False, led=None, wdog=False,
                  in_order=False):
@@ -47,8 +48,8 @@ class Client:
         :param server: server address/ip
         :param port: port the server app is running on
         :param timeout: connection timeout
-        :param connected_cb: cb called when (dis-)connected to server
-        :param connected_cb_args: optional args to pass to connected_cb
+        :param conn_cb: cb called when (dis-)connected to server
+        :param conn_cb_args: optional args to pass to connected_cb
         :param verbose: debug output
         :param led: led output for showing connection state, heartbeat
         :param in_order: strictly send messages in order. Prevents multiple concurrent
@@ -72,19 +73,23 @@ class Client:
         if wdog:
             if platform == 'pyboard':
                 self._wdt = machine.WDT(0, 20000)
+
                 def wdt():
                     def inner(feed=0):  # Ignore control values
                         if not feed:
                             self._wdt.feed()
+
                     return inner
+
                 self._feed = wdt()
             else:
                 def wdt(secs=0):
                     timer = machine.Timer(-1)
                     timer.init(period=1000, mode=machine.Timer.PERIODIC,
-                               callback=lambda t:self._feed())
+                               callback=lambda t: self._feed())
                     cnt = secs
                     run = False  # Disable until 1st feed
+
                     def inner(feed=WDT_CB):
                         nonlocal cnt, run, timer
                         if feed == 0:  # Fixed timeout
@@ -99,15 +104,17 @@ class Client:
                                 cnt -= 1
                                 if cnt <= 0:
                                     reset()
+
                     return inner
+
                 self._feed = wdt(20)
         else:
             self._feed = lambda x: None
 
         if platform == 'esp8266':
             self._sta_if = network.WLAN(network.STA_IF)
-            ap = network.WLAN(network.AP_IF) # create access-point interface
-            ap.active(False)         # deactivate the interface
+            ap = network.WLAN(network.AP_IF)  # create access-point interface
+            ap.active(False)  # deactivate the interface
         elif platform == 'pyboard':
             self._sta_if = network.WLAN()
         elif ESP32:
@@ -258,8 +265,8 @@ class Client:
     # Await a WiFi connection for 10 secs.
     async def _got_wifi(self, s):
         for _ in range(20):  # Wait t s for connect. If it fails assume an outage
-            #if ESP32:  # Hopefully no longer needed
-                #utime.sleep_ms(20)
+            # if ESP32:  # Hopefully no longer needed
+            # utime.sleep_ms(20)
             await asyncio.sleep_ms(500)
             self._feed(0)
             if s.isconnected():
@@ -400,7 +407,7 @@ class Client:
                     await self._send(b"\n")
                 except OSError:
                     self._verbose and print("Sending id failed")
-                    if init: # another application could run on this port and reject messages
+                    if init:  # another application could run on this port and reject messages
                         await self.bad_server()
                 else:
                     _keepalive = self._keepalive()
@@ -591,7 +598,7 @@ class Client:
                 if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
                     return False
 
-        #if platform == 'pyboard':
+        # if platform == 'pyboard':
         await asyncio.sleep_ms(200)  # Reduce message loss (why ???)
         self._last_wr = utime.ticks_ms()
         return True

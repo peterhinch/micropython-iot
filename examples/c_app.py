@@ -13,11 +13,16 @@ gc.collect()
 import ujson
 # Optional LED. led=None if not required
 from sys import platform
+
 if platform == 'pyboard':  # D series
     from pyb import LED
+
     led = LED(1)
+elif platform == 'linux':
+    led = None
 else:
     from machine import Pin
+
     led = Pin(2, Pin.OUT, value=1)  # Optional LED
 # End of optionalLED
 
@@ -29,15 +34,15 @@ gc.collect()
 class App(client.Client):
     def __init__(self, loop, verbose):
         self.verbose = verbose
-        self.cl = client.Client(loop, local.MY_ID, local.SERVER, local.SSID, local.PW,
-                         conn_cb=self.constate, verbose=verbose, led=led, wdog=False)
+        super().__init__(loop, local.MY_ID, local.SERVER, local.PORT, local.SSID, local.PW,
+                         conn_cb=self.constate, verbose=verbose, led=led, wdog=False, in_order=True)
         loop.create_task(self.start(loop))
         self.latency_added = 0
         self.count = 0
 
     async def start(self, loop):
         self.verbose and print('App awaiting connection.')
-        await self.cl
+        await self
         loop.create_task(self.reader())
         loop.create_task(self.writer())
 
@@ -49,7 +54,7 @@ class App(client.Client):
         while True:
             # Attempt to read data: in the event of an outage, .readline()
             # pauses until the connection is re-established.
-            line = await self.cl.readline()
+            line = await self.readline()
             data = ujson.loads(line)
             # Receives [restart count, uptime in secs]
             print('Got', data, 'from server app')
@@ -69,7 +74,7 @@ class App(client.Client):
             print('Sent', data, 'to server app\n')
             # .writeline() behaves as per .readline()
             st = utime.ticks_ms()
-            await self.cl.writeline(ujson.dumps(data))
+            await self.writeline(ujson.dumps(data))
             latency = utime.ticks_ms() - st
             self.latency_added += latency
             self.count += 1
@@ -77,7 +82,7 @@ class App(client.Client):
             # await asyncio.sleep(5)
 
     def shutdown(self):
-        self.cl.close()  # Shuts down WDT (but not on Pyboard D).
+        self.close()  # Shuts down WDT (but not on Pyboard D).
 
 
 loop = asyncio.get_event_loop()
