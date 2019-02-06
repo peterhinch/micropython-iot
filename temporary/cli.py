@@ -5,6 +5,8 @@ gc.collect()
 import usocket as socket
 import uasyncio as asyncio
 import ujson as json
+import utime as time
+import errno
 gc.collect()
 import network
 
@@ -29,6 +31,12 @@ async def run(loop):
     sock.setblocking(False)
     loop.create_task(reader(sock))
     loop.create_task(writer(sock))
+    loop.create_task(simulate_async_delay())
+
+async def simulate_async_delay():
+    while True:
+        await asyncio.sleep(0)
+        time.sleep(0.05)  # 0.2 eventually get long delays
 
 async def reader(sock):
     print('Reader start')
@@ -68,10 +76,16 @@ async def readline(sock):
 
 async def send(sock, d):  # Write a line to socket.
     while d:
-        ns = sock.send(d)
-        d = d[ns:]
-        if d:  # Partial write: trim data and pause
-            await asyncio.sleep_ms(20)
+        try:
+            ns = sock.send(d)
+        except OSError as e:
+            err = e.args[0]
+            if err == errno.EAGAIN:  # Would block: try later
+                await asyncio.sleep_ms(100)
+        else:
+            d = d[ns:]
+            if d:  # Partial write: trim data and pause
+                await asyncio.sleep_ms(20)
 
 loop = asyncio.get_event_loop()
 loop.create_task(run(loop))

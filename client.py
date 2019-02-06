@@ -16,6 +16,7 @@ from sys import platform
 import network
 import utime
 import machine
+import errno
 from . import gmid, isnew, launch, Event, Lock, SetByte  # __init__.py
 gc.collect()
 from micropython import const
@@ -189,12 +190,9 @@ class Client:
             # before we send.
             while not self._ok:
                 await asyncio.sleep_ms(tshort)
-            try:
-                async with self._s_lock:
-                    await self._send(line)
-                return
-            except OSError:
-                pass
+            async with self._s_lock:
+                if await self._send(line):
+                    return
 
             self._evfail.set('writer fail')
             # Wait for a response to _evfail
@@ -270,7 +268,8 @@ class Client:
                 # Server reads ID immediately, but a brief pause is probably wise.
                 await asyncio.sleep_ms(50)
                 # No need for lock yet.
-                await self._send(self._my_id)  # Can throw OSError
+                if not await self._send(self._my_id):
+                    raise OSError
             except OSError:
                 if init:
                     await self.bad_server()
@@ -328,23 +327,21 @@ class Client:
             self._evfail.set('reader fail')  # ._run cancels other coros
 
     async def _sendack(self, mid):
-        try:
-            async with self._s_lock:
-                await self._send('{:02x}\n'.format(mid))
-        except OSError:
-            self._evfail.set('sendack fail')  # ._run cancels other coros
+        async with self._s_lock:
+            if await self._send('{:02x}\n'.format(mid)):
+                return
+        self._evfail.set('sendack fail')  # ._run cancels other coros
 
     async def _keepalive(self):
-        try:
-            while True:
-                due = self._tim_ka - utime.ticks_diff(utime.ticks_ms(), self._last_wr)
-                if due <= 0:
-                    async with self._s_lock:
-                        await self._send(b'\n')
-                    continue
+        while True:
+            due = self._tim_ka - utime.ticks_diff(utime.ticks_ms(), self._last_wr)
+            if due <= 0:
+                async with self._s_lock:
+                    if not await self._send(b'\n'):
+                        self._evfail.set('keepalive fail')
+                        return
+            else:
                 await asyncio.sleep_ms(due)
-        except OSError:
-            self._evfail.set('keepalive fail')
 
     # Read a line from nonblocking socket: reads can return partial data which
     # are joined into a line. Blank lines are keepalive packets which reset
@@ -371,7 +368,7 @@ class Client:
             if d == b'':
                 raise OSError
             if d is None:  # Nothing received: wait on server
-                await asyncio.sleep_ms(0)  # TEST was 100ms
+                await asyncio.sleep_ms(0)
             elif line == b'':
                 line = d
             else:
@@ -382,12 +379,22 @@ class Client:
     async def _send(self, d):  # Write a line to socket.
         start = utime.ticks_ms()
         while d:
-            ns = self._sock.send(d)  # OSError if client closes socket
-            d = d[ns:]
-            if d:  # Partial write: pause
-                await asyncio.sleep_ms(20)
-            if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
-                raise OSError
-        if platform == 'pyboard':  # Bug in socket?
-            await asyncio.sleep_ms(200)  # ESP is too slow to need this
+            try:
+                ns = self._sock.send(d)  # OSError if client closes socket
+            except OSError as e:
+                err = e.args[0]
+                if err == errno.EAGAIN:  # Would block: await server read
+                    await asyncio.sleep_ms(100)
+                else:
+                    return False  # peer disconnect
+            else:
+                d = d[ns:]
+                if d:  # Partial write: pause
+                    await asyncio.sleep_ms(20)
+                if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
+                    return False
+
+        #if platform == 'pyboard':
+        await asyncio.sleep_ms(200)  # Reduce message loss (why ???)
         self._last_wr = utime.ticks_ms()
+        return True

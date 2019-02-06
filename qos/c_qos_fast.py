@@ -74,10 +74,10 @@ class App:
                 data = [self.tx_msg_id, self.cl.connects, gc.mem_free(),
                         self.dupes, self.count_missed()]
                 self.tx_msg_id += 1
+                await self.cl  # Only launch write if link is up
                 print('Sent', data, 'to server app\n')
                 dstr = ujson.dumps(data)
                 loop.create_task(self.cl.write(dstr, wait=False))
-                await asyncio.sleep_ms(300)
             await asyncio.sleep(5)
 
     def close(self):

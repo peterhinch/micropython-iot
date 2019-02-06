@@ -352,7 +352,11 @@ class Connection:
         while d:
             try:
                 ns = self._sock.send(d)  # Raise OSError if client fails
-            except OSError:
+            except OSError as e:
+                err = e.args[0]
+                if err == errno.EAGAIN:  # Would block: try later
+                    await asyncio.sleep(0.1)
+                    continue
                 break
             else:
                 d = d[ns:]

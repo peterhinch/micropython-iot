@@ -8,12 +8,14 @@ if upython:
     import uselect as select
     import uerrno as errno
     import ujson as json
+    import utime as time
 else:
     import socket
     import asyncio
     import select
     import errno
     import json
+    import time
 
 PORT = 8123
 ACK = -1
@@ -34,7 +36,13 @@ async def run(loop):
             c_sock.setblocking(False)
             loop.create_task(reader(c_sock))
             loop.create_task(writer(c_sock))
+            loop.create_task(simulate_async_delay())
         await asyncio.sleep(0.2)
+
+async def simulate_async_delay():
+    while True:
+        await asyncio.sleep(0)
+        time.sleep(0.05)  # 0.2 eventually get long delays
 
 async def reader(sock):
     print('Reader start')
@@ -77,10 +85,16 @@ async def writer(sock):
 
 async def send(sock, d):
     while d:
-        ns = sock.send(d)  # Raise OSError if client fails
-        d = d[ns:]
-        if d:
-            await asyncio.sleep(0.05)
+        try:
+            ns = sock.send(d)  # Raise OSError if client fails
+        except OSError as e:
+            err = e.args[0]
+            if err == errno.EAGAIN:  # Would block: try later
+                await asyncio.sleep(0.1)
+        else:
+            d = d[ns:]
+            if d:
+                await asyncio.sleep(0.05)
 
 loop = asyncio.get_event_loop()
 loop.create_task(run(loop))
