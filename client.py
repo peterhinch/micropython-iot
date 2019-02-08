@@ -294,6 +294,8 @@ class Client:
                     await self._send(buf)
                     if buf.endswith(b"\n") is False:
                         await self._send(b"\n")
+                    # if platform == 'pyboard':
+                    await asyncio.sleep_ms(200)  # Reduce message loss (why ???)
                 self._verbose and print('Sent data', preheader, header, buf, qos)
             except OSError:
                 self._evfail.set('writer fail')
@@ -598,7 +600,5 @@ class Client:
                 if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
                     return False
 
-        # if platform == 'pyboard':
-        await asyncio.sleep_ms(200)  # Reduce message loss (why ???)
         self._last_wr = utime.ticks_ms()
         return True

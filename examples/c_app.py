@@ -11,38 +11,25 @@ from micropython_iot import client
 
 gc.collect()
 import ujson
-# Optional LED. led=None if not required
-from sys import platform
-
-if platform == 'pyboard':  # D series
-    from pyb import LED
-
-    led = LED(1)
-elif platform == 'linux':
-    led = None
-else:
-    from machine import Pin
-
-    led = Pin(2, Pin.OUT, value=1)  # Optional LED
-# End of optionalLED
+from machine import Pin
 
 from . import local
 
 gc.collect()
 
 
-class App(client.Client):
-    def __init__(self, loop, verbose):
+class App:
+    def __init__(self, loop, my_id, server, port, timeout, verbose):
         self.verbose = verbose
-        super().__init__(loop, local.MY_ID, local.SERVER, local.PORT, local.SSID, local.PW,
-                         conn_cb=self.constate, verbose=verbose, led=led, wdog=False, in_order=True)
+        led = None  # Pin(2, Pin.OUT, value=1)  # Optional LED
+        self.cl = client.Client(loop, my_id, server, port, timeout, self.constate, None, verbose, led, in_order=True)
         loop.create_task(self.start(loop))
         self.latency_added = 0
         self.count = 0
 
     async def start(self, loop):
         self.verbose and print('App awaiting connection.')
-        await self
+        await self.cl
         loop.create_task(self.reader())
         loop.create_task(self.writer())
 
@@ -54,7 +41,7 @@ class App(client.Client):
         while True:
             # Attempt to read data: in the event of an outage, .readline()
             # pauses until the connection is re-established.
-            line = await self.readline()
+            line = await self.cl.readline()
             data = ujson.loads(line)
             # Receives [restart count, uptime in secs]
             print('Got', data, 'from server app')
@@ -74,20 +61,20 @@ class App(client.Client):
             print('Sent', data, 'to server app\n')
             # .writeline() behaves as per .readline()
             st = utime.ticks_ms()
-            await self.writeline(ujson.dumps(data))
+            await self.cl.writeline(ujson.dumps(data))
             latency = utime.ticks_ms() - st
             self.latency_added += latency
             self.count += 1
             print("Latency:", latency, "Avg Latency:", self.latency_added / self.count)
-            # await asyncio.sleep(5)
+            await asyncio.sleep(5)
 
-    def shutdown(self):
-        self.close()  # Shuts down WDT (but not on Pyboard D).
+    def close(self):
+        self.cl.close()
 
 
 loop = asyncio.get_event_loop()
-app = App(loop, verbose=True)
+app = App(loop, local.MY_ID, local.SERVER, local.PORT, local.TIMEOUT, True)
 try:
     loop.run_forever()
 finally:
-    app.shutdown()
+    app.close()

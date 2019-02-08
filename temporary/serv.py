@@ -1,6 +1,7 @@
 # Run under CPython 3.5+ or MicroPython Unix build
 
 import sys
+
 upython = sys.implementation.name == 'micropython'
 if upython:
     import usocket as socket
@@ -17,8 +18,9 @@ else:
     import json
     import time
 
-PORT = 8123
+PORT = 8888
 ACK = -1
+
 
 async def run(loop):
     addr = socket.getaddrinfo('0.0.0.0', PORT, 0, socket.SOCK_STREAM)[0][-1]
@@ -39,10 +41,12 @@ async def run(loop):
             loop.create_task(simulate_async_delay())
         await asyncio.sleep(0.2)
 
+
 async def simulate_async_delay():
     while True:
         await asyncio.sleep(0)
         time.sleep(0.05)  # 0.2 eventually get long delays
+
 
 async def reader(sock):
     print('Reader start')
@@ -69,9 +73,10 @@ async def reader(sock):
                 if data[0] != ACK:
                     print('Got', data)
                     await send(sock, ack.encode('utf8'))
-                    if last >= 0 and data[0] - last -1:
+                    if last >= 0 and data[0] - last - 1:
                         raise OSError('Missed message')
                 last = data[0]
+
 
 async def writer(sock):
     print('Writer start')
@@ -81,7 +86,8 @@ async def writer(sock):
             d = '{}\n'.format(json.dumps(data))
             await send(sock, d.encode('utf8'))
             data[0] += 1
-        await asyncio.sleep_ms(1000)  # ???
+        await asyncio.sleep(1)  # ???
+
 
 async def send(sock, d):
     while d:
@@ -95,6 +101,7 @@ async def send(sock, d):
             d = d[ns:]
             if d:
                 await asyncio.sleep(0.05)
+
 
 loop = asyncio.get_event_loop()
 loop.create_task(run(loop))
