@@ -40,26 +40,34 @@ async def simulate_async_delay():
 
 async def reader(sock):
     print('Reader start')
-    ack = '{}\n'.format(json.dumps([ACK, 'Ack from client.']))
+    ack = [ACK, 0, 'Ack from client.']
     last = -1
+    lastack = -1
     while True:
         line = await readline(sock)
         data = json.loads(line)
-        if data[0] != ACK:
-            await send(sock, ack.encode('utf8'))
+        if data[0] == ACK:
+            print('Got ack', data)
+            if lastack >= 0 and data[1] - lastack -1:
+                raise OSError('Missed ack')
+            lastack = data[1]
+        else:
+            d = '{}\n'.format(json.dumps(ack))
+            await send(sock, d.encode('utf8'))
+            ack[1] += 1
             print('Got', data)
-            if last >= 0 and data[0] - last -1:
+            if last >= 0 and data[1] - last -1:
                 raise OSError('Missed message')
-        last = data[0]
+            last = data[1]
 
 async def writer(sock):
     print('Writer start')
-    data = [0, 'Message from client.']
+    data = [0, 0, 'Message from client.']
     while True:
         for _ in range(4):
             d = '{}\n'.format(json.dumps(data))
             await send(sock, d.encode('utf8'))
-            data[0] += 1
+            data[1] += 1
         await asyncio.sleep_ms(1030)  # ???
 
 async def readline(sock):
