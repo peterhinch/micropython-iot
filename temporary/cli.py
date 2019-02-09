@@ -12,7 +12,6 @@ import network
 
 PORT = 8123
 SERVER = '192.168.0.41'
-ACK = -1
 
 async def run(loop):
     s = network.WLAN()
@@ -31,44 +30,26 @@ async def run(loop):
     sock.setblocking(False)
     loop.create_task(reader(sock))
     loop.create_task(writer(sock))
-    loop.create_task(simulate_async_delay())
-
-async def simulate_async_delay():
-    while True:
-        await asyncio.sleep(0)
-        time.sleep(0.05)  # 0.2 eventually get long delays
 
 async def reader(sock):
     print('Reader start')
-    ack = [ACK, 0, 'Ack from client.']
     last = -1
-    lastack = -1
     while True:
         line = await readline(sock)
         data = json.loads(line)
-        if data[0] == ACK:
-            print('Got ack', data)
-            if lastack >= 0 and data[1] - lastack -1:
-                raise OSError('Missed ack')
-            lastack = data[1]
-        else:
-            d = '{}\n'.format(json.dumps(ack))
-            await send(sock, d.encode('utf8'))
-            ack[1] += 1
-            print('Got', data)
-            if last >= 0 and data[1] - last -1:
-                raise OSError('Missed message')
-            last = data[1]
+        print('Got', data)
+        if last >= 0 and data[0] - last -1:
+            raise OSError('Missed message')
+        last = data[0]
 
 async def writer(sock):
     print('Writer start')
-    data = [0, 0, 'Message from client.']
+    data = [0, 'Message from client.']
     while True:
-        for _ in range(4):
-            d = '{}\n'.format(json.dumps(data))
-            await send(sock, d.encode('utf8'))
-            data[1] += 1
-        await asyncio.sleep_ms(1030)  # ???
+        d = '{}\n'.format(json.dumps(data))
+        await send(sock, d.encode('utf8'))
+        data[0] += 1
+        await asyncio.sleep_ms(253)  # ???
 
 async def readline(sock):
     line = b''

@@ -146,7 +146,7 @@ class Connection:
     @classmethod
     def close_all(cls):
         for conn in cls._conns.values():
-            conn._close()
+            conn._close('Connection {} closed by application'.format(conn._cl_id))
         if cls._server_sock is not None:
             cls._server_sock.close()
 
@@ -190,7 +190,7 @@ class Connection:
 
     def status(self):
         return self._sock is not None
-    
+
     __call__ = status
 
     def __await__(self):
@@ -248,19 +248,19 @@ class Connection:
                     err = e.args[0]
                     if err == errno.EAGAIN:  # Would block: try later
                         if time.time() - start > self._to_secs:
-                            self._close()  # Unless it timed out.
+                            self._close('_read timeout')  # Unless it timed out.
                         else:
                             # Waiting for data from client. Limit CPU overhead.
                             await asyncio.sleep(TIM_TINY)
                     else:
-                        self._close()  # Reset by peer 104
+                        self._close('_read reset by peer 104')
                 else:
                     start = time.time()  # Something was received
                     if self._await_client:  # 1st item after (re)start
                         self._await_client = False  # Enable write after delay
                         self._loop.create_task(self._client_active())
                     if d == b'':  # Reset by peer
-                        self._close()
+                        self._close('_read reset by peer')
                         continue
                     d = d.lstrip(b'\n')  # Discard leading KA's
                     if d == b'':  # Only KA's
@@ -276,7 +276,6 @@ class Connection:
     # messages and ACKs. Put messages into ._lines and remove ACKs from
     # ._acks_pend. Note messages in ._lines have no trailing \n.
     def _process_str(self, l):
-#        print('***** GOT *****', l)
         l = [x for x in l if x]  # Discard ka's
         self._acks_pend -= {int(x, 16) for x in l if len(x) == 2}
         lines = [x for x in l if len(x) != 2]  # Lines received
@@ -313,7 +312,7 @@ class Connection:
                 return  # Got ack, removed from ._acks_pend, all done
             # Either timed out or an outage started
             await self._vwrite(line)  # Waits for outage to clear
-            self._verbose and print('Repeat', line, 'to server app')
+            self._verbose and print('Repeat', line[2:], 'to server app')
 
     # When ._read receives an ACK it is discarded from ._acks_pend. Wait for
     # this to occur (or an outage to start). Currently use system timeout.
@@ -370,18 +369,18 @@ class Connection:
             # Pyboard D despite completely different hardware.
             # Is it better to return immediately and delay subsequent writes?
             # Should the delay be handled at a higher level?
-            await asyncio.sleep(0.2)  # Disallow rapid writes: result in data loss
+            #await asyncio.sleep(0.2)  # Disallow rapid writes: result in data loss
             return True  # Success
-        self._verbose and print('Write fail: closing connection.')
-        self._close()
+        self._close('Write fail: closing connection.')
         return False
 
     def __getitem__(self, client_id):  # Return a Connection of another client
         return Connection._conns[client_id]
 
-    def _close(self):
+    def _close(self, reason=''):
         if self._sock is not None:
             self._verbose and print('fail detected')
+            self._verbose and reason and print('Reason:', reason)
             self._sock.close()
             self._sock = None
 
