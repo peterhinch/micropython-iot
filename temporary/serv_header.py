@@ -40,6 +40,7 @@ else:
         m = ""
         for arg in args:
             m += str(arg)
+            m += "   "
         log.debug(m)
 
 PORT = 8888
@@ -90,49 +91,60 @@ async def reader(sock):
     istr = ''
     last = -1
     lastack = -1
-    while True:
+    try:
+        while True:
+            try:
+                d = sock.recv(4096)  # bytes object
+            except OSError as e:
+                err = e.args[0]
+                if err == errno.EAGAIN:  # Would block: try later
+                    # print("EAGAIN recv")
+                    await asyncio.sleep(0.05)
+            else:
+                if d == b'':  # Reset by peer
+                    raise OSError('Client fail.')
+                istr += d.decode()  # Add to any partial message
+                # Strings from this point
+                l = istr.split('\n')
+                istr = l.pop()  # '' unless partial line
+                for line in l:
+                    print("Got", line)
+                    message = io.StringIO(line)
+                    try:
+                        preheader = bytearray(binascii.unhexlify(message.read(10)))
+                        mid = preheader[0]
+                    except Exception as e:
+                        print("Error reading preheader", e)
+                        continue
+                    try:
+                        data = json.load(message)
+                    except Exception:
+                        data = message.read()
+                    finally:
+                        message.close()
+                        del message
+                    if preheader[4] & 0x2C == 0x2C:  # ACK
+                        print('Got ack', mid, data)
+                        if lastack >= 0 and data[1] - lastack - 1:
+                            raise OSError('Missed ack')
+                        lastack = data[1]
+                    else:
+                        await sendack(sock, mid, ack)
+                        ack[1] += 1
+                        print('Got', data)
+                        if last >= 0 and data[1] - last - 1:
+                            raise OSError('Missed message')
+                        last = data[1]
+    except Exception as e:
+        print(e)
+        raise e
+    finally:
+        print("Reader stopped")
         try:
-            d = sock.recv(4096)  # bytes object
-        except OSError as e:
-            err = e.args[0]
-            if err == errno.EAGAIN:  # Would block: try later
-                # print("EAGAIN recv")
-                await asyncio.sleep(0.05)
-        else:
-            if d == b'':  # Reset by peer
-                raise OSError('Client fail.')
-            istr += d.decode()  # Add to any partial message
-            # Strings from this point
-            l = istr.split('\n')
-            istr = l.pop()  # '' unless partial line
-            for line in l:
-                print("Got", line)
-                message = io.StringIO(line)
-                try:
-                    preheader = bytearray(binascii.unhexlify(message.read(10)))
-                    mid = preheader[0]
-                except Exception as e:
-                    print("Error reading preheader", e)
-                    continue
-                try:
-                    data = json.load(message)
-                except Exception:
-                    data = message.read()
-                finally:
-                    message.close()
-                    del message
-                if preheader[4] & 0x2C == 0x2C:  # ACK
-                    print('Got ack', mid, data)
-                    if lastack >= 0 and data[1] - lastack - 1:
-                        raise OSError('Missed ack')
-                    lastack = data[1]
-                else:
-                    await sendack(sock, mid, ack)
-                    ack[1] += 1
-                    print('Got', data)
-                    if last >= 0 and data[1] - last - 1:
-                        raise OSError('Missed message')
-                    last = data[1]
+            print("Closing socket")
+            sock.close()
+        except:
+            pass
 
 
 async def sendack(sock, mid, ack):
@@ -147,35 +159,39 @@ async def sendack(sock, mid, ack):
 async def writer(sock, concatenate):
     print('Writer start')
     data = [0, 0, 'Message from server.']
-    while True:
-        d = ''
-        for _ in range(4):
-            # async with lock:
-            mid = next(getmid)
-            d = json.dumps(data)
-            preheader = bytearray(5)
-            preheader[0] = mid
-            preheader[1] = 0
-            preheader[2] = (len(d) & 0xFF)
-            preheader[3] = (len(d) >> 8) & 0xFF  # allows for 65535 message length
-            preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
-            preheader[4] |= 0x01  # qos==True, request ACK
-            preheader = binascii.hexlify(preheader)
-            message = preheader.decode() + d + "\n"
+    try:
+        while True:
+            d = ''
+            for _ in range(4):
+                # async with lock:
+                mid = next(getmid)
+                d = json.dumps(data)
+                preheader = bytearray(5)
+                preheader[0] = mid
+                preheader[1] = 0
+                preheader[2] = (len(d) & 0xFF)
+                preheader[3] = (len(d) >> 8) & 0xFF  # allows for 65535 message length
+                preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
+                preheader[4] |= 0x01  # qos==True, request ACK
+                preheader = binascii.hexlify(preheader)
+                message = preheader.decode() + d + "\n"
+                if concatenate:
+                    d = '{}{}'.format(d, message)
+                else:
+                    await send(sock, message)
+                    await asyncio.sleep(0)
+                data[1] += 1
             if concatenate:
-                d = '{}{}'.format(d, message)
-            else:
-                await send(sock, message)
-                await asyncio.sleep(0)
-            data[0] += 1
-            data[1] += 1
-        if concatenate:
-            await send(sock, d)
-        print("sent", repr(d))
-        await asyncio.sleep(1)  # ???
+                await send(sock, d)
+            await asyncio.sleep(1)  # ???
+    except Exception as e:
+        raise e
+    finally:
+        print("Writer stopped")
 
 
 async def send(sock, d):
+    print("sending", d)
     if type(d) == str:
         d = d.encode("utf8")
     while d:

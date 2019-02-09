@@ -60,37 +60,47 @@ async def simulate_async_delay():
 
 
 async def reader(sock):
-    print('Reader start')
-    ack = [ACK, 0, 'Ack from client {!s}.'.format(MY_ID)]
-    last = -1
-    lastack = -1
-    while True:
-        line = await readline(sock)
-        message = uio.StringIO(line)
-        preheader = bytearray(ubinascii.unhexlify(message.read(10)))
+    try:
+        print('Reader start')
+        ack = [ACK, 0, 'Ack from client {!s}.'.format(MY_ID)]
+        last = -1
+        lastack = -1
+        while True:
+            line = await readline(sock)
+            message = uio.StringIO(line)
+            preheader = bytearray(ubinascii.unhexlify(message.read(10)))
+            try:
+                data = json.load(message)
+            except Exception:
+                data = message.read()
+            finally:
+                message.close()
+                del message
+            mid = preheader[0]
+            if preheader[4] & 0x2C == 0x2C:  # ACK
+                print('Got ack', mid, data[1])
+                if lastack >= 0 and data[1] - lastack - 1:
+                    raise OSError('Missed ack')
+                lastack = data[1]
+            else:
+                await sendack(sock, mid, ack)
+                ack[1] += 1
+                print('Got', data)
+                if data[1] == last:
+                    print("Dumped dupe", last)
+                    continue
+                if last >= 0 and data[1] - last - 1:
+                    raise OSError('Missed message')
+                last = data[1]
+    except Exception as e:
+        raise e
+    finally:
+        print("Reader stopped")
         try:
-            data = json.load(message)
-        except Exception:
-            data = message.read()
-        finally:
-            message.close()
-            del message
-        mid = preheader[0]
-        if preheader[4] & 0x2C == 0x2C:  # ACK
-            print('Got ack', mid, data[1])
-            if lastack >= 0 and data[1] - lastack - 1:
-                raise OSError('Missed ack')
-            lastack = data[1]
-        else:
-            await sendack(sock, mid, ack)
-            ack[1] += 1
-            print('Got', data)
-            if data[1] == last:
-                print("Dumped dupe", last)
-                continue
-            if last >= 0 and data[1] - last - 1:
-                raise OSError('Missed message')
-            last = data[1]
+            print("Closing socket")
+            sock.close()
+        except:
+            pass
 
 
 async def sendack(sock, mid, ack):
@@ -105,22 +115,27 @@ async def sendack(sock, mid, ack):
 async def writer(sock):
     print('Writer start')
     data = [0, 0, 'Message from client {!s}.'.format(MY_ID)]
-    while True:
-        for _ in range(4):
-            mid = next(getmid)
-            d = json.dumps(data)
-            preheader = bytearray(5)
-            preheader[0] = mid
-            preheader[1] = 0
-            preheader[2] = (len(d) & 0xFF) - (1 if d.endswith(b"\n") else 0)
-            preheader[3] = (len(d) >> 8) & 0xFF  # allows for 65535 message length
-            preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
-            preheader[4] |= 0x01  # qos==True, request ACK
-            preheader = ubinascii.hexlify(preheader).decode()
-            d = '{}{}\n'.format(preheader, d)
-            await send(sock, d.encode("utf8"))
-            data[1] += 1
-        await asyncio.sleep_ms(1030)  # ???
+    try:
+        while True:
+            for _ in range(4):
+                mid = next(getmid)
+                d = json.dumps(data)
+                preheader = bytearray(5)
+                preheader[0] = mid
+                preheader[1] = 0
+                preheader[2] = (len(d) & 0xFF) - (1 if d.endswith(b"\n") else 0)
+                preheader[3] = (len(d) >> 8) & 0xFF  # allows for 65535 message length
+                preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
+                preheader[4] |= 0x01  # qos==True, request ACK
+                preheader = ubinascii.hexlify(preheader).decode()
+                d = '{}{}\n'.format(preheader, d)
+                await send(sock, d.encode("utf8"))
+                data[1] += 1
+            await asyncio.sleep_ms(1030)  # ???
+    except Exception as e:
+        raise e
+    finally:
+        print("Writer stopped")
 
 
 async def readline(sock):
@@ -130,6 +145,7 @@ async def readline(sock):
             return line.decode()
         d = sock.readline()
         if d == b'':
+            print("Connection closed")
             raise OSError
         if d is not None:  # Something received
             line = b''.join((line, d))
@@ -137,6 +153,7 @@ async def readline(sock):
 
 
 async def send(sock, d):  # Write a line to socket.
+    print("Sending", d)
     while d:
         try:
             ns = sock.send(d)
