@@ -96,7 +96,7 @@ async def reader(sock):
         except OSError as e:
             err = e.args[0]
             if err == errno.EAGAIN:  # Would block: try later
-                print("EAGAIN recv")
+                # print("EAGAIN recv")
                 await asyncio.sleep(0.05)
         else:
             if d == b'':  # Reset by peer
@@ -144,10 +144,11 @@ async def sendack(sock, mid, ack):
     await send(sock, preheader)
 
 
-async def writer(sock):
+async def writer(sock, concatenate):
     print('Writer start')
-    data = [0, 0, 'Message from client.']
+    data = [0, 0, 'Message from server.']
     while True:
+        d = ''
         for _ in range(4):
             # async with lock:
             mid = next(getmid)
@@ -161,15 +162,22 @@ async def writer(sock):
             preheader[4] |= 0x01  # qos==True, request ACK
             preheader = binascii.hexlify(preheader)
             message = preheader.decode() + d + "\n"
-            await send(sock, message)
+            if concatenate:
+                d = '{}{}'.format(d, message)
+            else:
+                await send(sock, message)
+                await asyncio.sleep(0)
             data[0] += 1
             data[1] += 1
+        if concatenate:
+            await send(sock, d)
+        print("sent", repr(d))
         await asyncio.sleep(1)  # ???
 
 
 async def send(sock, d):
     if type(d) == str:
-        d = d.encode()
+        d = d.encode("utf8")
     while d:
         try:
             ns = sock.send(d)  # Raise OSError if client fails
@@ -185,5 +193,5 @@ async def send(sock, d):
 
 
 loop = asyncio.get_event_loop()
-loop.create_task(run(loop))
+loop.create_task(run(loop, concatenate=False))
 loop.run_forever()
