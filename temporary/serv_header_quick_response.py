@@ -1,6 +1,11 @@
 # Run under CPython 3.5+ or MicroPython Unix build
 # Aims to detect missed messages on socket where connection is via WiFi
 
+
+# Sending a message immediately after reading from a socket often freezes the server reading messages
+# and results in the client throwing EAGAIN in sending direction until it throws ECONNABORTED at sock.readline()
+# and reconnects the wifi. Server will fail shortly after as the client closes the connection.
+
 import sys
 
 upython = sys.implementation.name == 'micropython'
