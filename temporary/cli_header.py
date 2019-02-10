@@ -6,7 +6,6 @@ gc.collect()
 import usocket as socket
 import uasyncio as asyncio
 import ujson as json
-import utime as time
 import errno
 
 gc.collect()
@@ -50,21 +49,12 @@ async def run(loop):
     sock.setblocking(False)
     loop.create_task(reader(sock))
     loop.create_task(writer(sock))
-    loop.create_task(simulate_async_delay())
-
-
-async def simulate_async_delay():
-    while True:
-        await asyncio.sleep(0)
-        time.sleep(0.05)  # 0.2 eventually get long delays
 
 
 async def reader(sock):
     try:
         print('Reader start')
-        ack = [ACK, 0, 'Ack from client {!s}.'.format(MY_ID)]
         last = -1
-        lastack = -1
         while True:
             line = await readline(sock)
             message = uio.StringIO(line)
@@ -77,21 +67,10 @@ async def reader(sock):
                 message.close()
                 del message
             mid = preheader[0]
-            if preheader[4] & 0x2C == 0x2C:  # ACK
-                print('Got ack', mid, data[1])
-                if lastack >= 0 and data[1] - lastack - 1:
-                    raise OSError('Missed ack')
-                lastack = data[1]
-            else:
-                await sendack(sock, mid, ack)
-                ack[1] += 1
-                print('Got', data)
-                if data[1] == last:
-                    print("Dumped dupe", last)
-                    continue
-                if last >= 0 and data[1] - last - 1:
-                    raise OSError('Missed message')
-                last = data[1]
+            print('Got', data)
+            if last >= 0 and data[0] - last - 1:
+                raise OSError('Missed message')
+            last = data[0]
     except Exception as e:
         raise e
     finally:
@@ -103,35 +82,24 @@ async def reader(sock):
             pass
 
 
-async def sendack(sock, mid, ack):
-    preheader = bytearray(5)
-    preheader[0] = mid
-    preheader[1] = preheader[2] = preheader[3] = 0
-    preheader[4] = 0x2C  # ACK
-    preheader = "{}{}\n".format(ubinascii.hexlify(preheader).decode(), json.dumps(ack))
-    await send(sock, preheader)
-
-
 async def writer(sock):
     print('Writer start')
-    data = [0, 0, 'Message from client {!s}.'.format(MY_ID)]
+    data = [0, 'Message from client {!s}.'.format(MY_ID)]
     try:
         while True:
-            for _ in range(4):
-                mid = next(getmid)
-                d = json.dumps(data)
-                preheader = bytearray(5)
-                preheader[0] = mid
-                preheader[1] = 0
-                preheader[2] = (len(d) & 0xFF) - (1 if d.endswith(b"\n") else 0)
-                preheader[3] = (len(d) >> 8) & 0xFF  # allows for 65535 message length
-                preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
-                preheader[4] |= 0x01  # qos==True, request ACK
-                preheader = ubinascii.hexlify(preheader).decode()
-                d = '{}{}\n'.format(preheader, d)
-                await send(sock, d.encode("utf8"))
-                data[1] += 1
-            await asyncio.sleep_ms(1030)  # ???
+            mid = next(getmid)
+            d = json.dumps(data)
+            preheader = bytearray(5)
+            preheader[0] = mid
+            preheader[1] = 0
+            preheader[2] = (len(d) & 0xFF) - (1 if d.endswith(b"\n") else 0)
+            preheader[3] = (len(d) >> 8) & 0xFF  # allows for 65535 message length
+            preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
+            preheader = ubinascii.hexlify(preheader).decode()
+            d = '{}{}\n'.format(preheader, d)
+            await send(sock, d.encode('utf8'))
+            data[0] += 1
+            await asyncio.sleep_ms(253)  # ???
     except Exception as e:
         raise e
     finally:

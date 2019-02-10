@@ -106,7 +106,7 @@ but one which persists through outages and offers guaranteed message delivery.
  6. [Ensuring resilience](./README.md#6-ensuring-resilience) Guidelines for application design.   
  7. [Quality of service](./README.md#7-quality-of-service) Guaranteeing message delivery.  
   7.1 [The qos argument](./README.md#71-the-qos-argument)  
-  7.2 [The wait argument](./README.md#71-the-wait-argument)  
+  7.2 [The wait argument](./README.md#71-the-wait-argument) Concurrent writes of qos messages.  
  8. [Performance](./README.md#8-performance)  
   8.1 [Latency and throughput](./README.md#81-latency-and-throughput)  
   8.2 [Client RAM utilisation](./README.md#82-client-ram-utilisation)  
@@ -286,7 +286,7 @@ from micropython_iot.remote import c_comms_tx
 from micropython_iot.remote import c_comms_rx
 ```
 
-#### The qos demo
+#### The standard qos (Quality of service) demo
 
 This test program verifies that each message (in each direction) is received
 exactly once. On the server navigate to the parent directory of
@@ -301,6 +301,23 @@ micropython -m micropython_iot.qos.s_qos_cp
 On the client, after editing `/pyboard/qos/local.py`, run:
 ```
 from micropython_iot.qos import c_qos
+```
+
+#### The fast qos demo
+
+This tests the option of concurrent `qos` writes. This is an advanced feature
+discussed in [section 7.1](./README.md#71-the-wait-argument). To run the demo,
+on the server navigate to the parent directory of `micropython_iot` and run:
+```
+python3 -m micropython_iot.qos.s_qos_fast
+```
+or
+```
+micropython -m micropython_iot.qos.s_qos_fast
+```
+On the client, after editing `/pyboard/qos/local.py`, run:
+```
+from micropython_iot.qos import c_qos_fast
 ```
 
 #### Troubleshooting the demos
@@ -346,7 +363,7 @@ class App:
         await self.cl  # Wait until client has connected to server
         loop.create_task(self.reader())
         loop.create_task(self.writer())
-        
+
     def state(self, state):  # Callback for change in connection status
         print("Connection state:", state)
 
@@ -365,7 +382,7 @@ class App:
             print('Sent', data, 'to server app\n')
             await self.cl.write(ujson.dumps(data))
             await asyncio.sleep(5)
-        
+
     def close(self):
         self.cl.close()
 
@@ -538,7 +555,7 @@ class App:
             print('Sent', self.data, 'to remote', self.client_id, '\n')
             await self.conn.write(json.dumps(self.data))  # May pause in event of outage
             await asyncio.sleep(5)
-        
+
 
 def run():
     loop = asyncio.get_event_loop()
@@ -702,14 +719,24 @@ overflows. The interface resumes operation after the outage has cleared.
 This default can be changed with the `wait` argument to `write`. If `False` a
 `qos` message will be sent immediately, even if acknowledge packets from
 previous messages are pending. Applications should be designed to limit the
-number of such `qos` messages sent in quick succession: on ESP8266 clients in
-particular, buffer overflows can occur.
+number of such `qos` messages sent in quick succession: on ESP8266 clients
+buffer overflows can occur. Demands on `uasyncio` are increased: it may be
+necessary to amend the default queue sizes in `get_event_loop`.
 
 If messages are sent with `wait=False` there is a chance that they may not be
 received in the order in which they were sent. As described above, in the event
 of `qos` message loss, retransmission occurs after a timeout period has
 elapsed. During that timeout period the application may have successfully sent
 another non-waiting `qos` message resulting in out of order reception.
+
+The demo programs `qos/c_qos_fast.py` (client) and `qos/s_qos_fast.py` issue
+four `write` operations with `wait=False` in quick succession. This number is
+probably near the maximum on an ESP8266. Note the need explicitly to check for
+connectivity before issuing the `write`: this is to avoid spawning large
+numbers of coroutines during an outage.
+
+In summary specifying `wait=False` should be considered an "advanced" option
+requiring testing to prove that resilence is maintained.
 
 ###### [Contents](./README.md#1-contents)
 

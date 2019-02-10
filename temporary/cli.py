@@ -6,7 +6,6 @@ gc.collect()
 import usocket as socket
 import uasyncio as asyncio
 import ujson as json
-import utime as time
 import errno
 
 gc.collect()
@@ -17,7 +16,6 @@ import machine
 MY_ID = ubinascii.hexlify(machine.unique_id()).decode()
 PORT = 8888
 SERVER = '192.168.178.60'
-ACK = -1
 
 
 async def run(loop):
@@ -37,47 +35,28 @@ async def run(loop):
     sock.setblocking(False)
     loop.create_task(reader(sock))
     loop.create_task(writer(sock))
-    loop.create_task(simulate_async_delay())
-
-
-async def simulate_async_delay():
-    while True:
-        await asyncio.sleep(0)
-        time.sleep(0.05)  # 0.2 eventually get long delays
 
 
 async def reader(sock):
     print('Reader start')
-    ack = [ACK, 0, 'Ack from client {!s}.'.format(MY_ID)]
     last = -1
-    lastack = -1
     while True:
         line = await readline(sock)
         data = json.loads(line)
-        if data[0] == ACK:
-            print('Got ack', data)
-            if lastack >= 0 and data[1] - lastack - 1:
-                raise OSError('Missed ack')
-            lastack = data[1]
-        else:
-            d = '{}\n'.format(json.dumps(ack))
-            await send(sock, d.encode('utf8'))
-            ack[1] += 1
-            print('Got', data)
-            if last >= 0 and data[1] - last - 1:
-                raise OSError('Missed message')
-            last = data[1]
+        print('Got', data)
+        if last >= 0 and data[0] - last - 1:
+            raise OSError('Missed message')
+        last = data[0]
 
 
 async def writer(sock):
     print('Writer start')
-    data = [0, 0, 'Message from client {!s}.'.format(MY_ID)]
+    data = [0, 'Message from client {!s}.'.format(MY_ID)]
     while True:
-        for _ in range(4):
-            d = '{}\n'.format(json.dumps(data))
-            await send(sock, d.encode('utf8'))
-            data[1] += 1
-        await asyncio.sleep_ms(1030)  # ???
+        d = '{}\n'.format(json.dumps(data))
+        await send(sock, d.encode('utf8'))
+        data[0] += 1
+        await asyncio.sleep_ms(253)  # ???
 
 
 async def readline(sock):
@@ -87,6 +66,7 @@ async def readline(sock):
             return line.decode()
         d = sock.readline()
         if d == b'':
+            print("Connection closed")
             raise OSError
         if d is not None:  # Something received
             line = b''.join((line, d))
@@ -94,6 +74,7 @@ async def readline(sock):
 
 
 async def send(sock, d):  # Write a line to socket.
+    print("Sending", d)
     while d:
         try:
             ns = sock.send(d)

@@ -30,7 +30,7 @@ WDT_CB = const(-3)
 
 ESP32 = platform == 'esp32' or platform == 'esp32_LoBo'
 
-# Message ID generator
+# Message ID generator. Only need one instance on client.
 getmid = gmid()
 gc.collect()
 
@@ -96,9 +96,7 @@ class Client:
                             cnt = secs
                             run = True
                         elif feed < 0:  # WDT control/callback
-                            if feed == WDT_SUSPEND:
-                                run = False  # Temporary suspension
-                            elif feed == WDT_CANCEL:
+                            if feed == WDT_CANCEL:
                                 timer.deinit()  # Permanent cancellation
                             elif feed == WDT_CB and run:  # Timer callback and is running.
                                 cnt -= 1
@@ -126,9 +124,9 @@ class Client:
         gc.collect()
 
         self._evfail = Event(100)  # 100ms pause
-        self._evread = Event()  # Respond fast to incoming
-        self._s_lock = Lock(100)  # For internal send conflict.
+        self._s_lock = Lock()  # For internal send conflict.
         self._last_wr = utime.ticks_ms()
+        self._lines = []
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
         self._ok = False  # Set after 1st successful read
@@ -141,9 +139,9 @@ class Client:
         loop.create_task(self._run(loop))
 
     # **** API ****
-    def __iter__(self):  # App can await a connection
-        while not self._ok:
-            yield from asyncio.sleep_ms(500)
+    def __iter__(self):  # Await a connection
+        while not self():
+            yield from asyncio.sleep_ms(self._tim_short)
 
     __await__ = __iter__
 
@@ -153,6 +151,8 @@ class Client:
         :return: bool
         """
         return self._ok
+
+    __call__ = status
 
     async def readline(self) -> str:
         """
@@ -168,10 +168,9 @@ class Client:
         Header can be None if not used.
         :return: header, line
         """
-        await self._evread
-        h, d = self._evread.value()
-        self._evread.clear()
-        return h, d
+        while not self._lines:
+            await asyncio.sleep_ms(self._tim_short)
+        return self._lines.pop(0)
 
     async def writeline(self, buf, qos=True):
         """
@@ -282,8 +281,7 @@ class Client:
         while True:
             # After an outage wait until something is received from server
             # before we send.
-            while not self._ok:
-                await asyncio.sleep_ms(self._tim_short)
+            await self
             try:
                 async with self._s_lock:
                     if qos:  # ACK is qos False, so no need to check
@@ -437,37 +435,29 @@ class Client:
                 # Also reconnect takes 3s which is more than enough.
                 while s.isconnected():
                     await asyncio.sleep(1)
-                    self._feed(0)
 
     async def _reader(self):  # Entry point is after a (re) connect.
         c = self.connects  # Count successful connects
-        self._evread.clear()  # No data read yet
-        try:
-            while True:
+        while True:
+            try:
                 preheader, header, line = await self._readline()  # OSError on fail
-                mid = preheader[0]
-                if preheader[4] & 0x2C == 0x2C:  # ACK
-                    self._verbose and print("Got ack mid", mid)
-                    self._acks_pend.discard(mid)
-                    continue  # All done
-                # Discard dupes. mid == 0 : Server has power cycled
-                if not mid:
-                    isnew(-1)  # Clear down rx message record
-                if isnew(mid):
-                    # Old message still pending. Discard new one peer will re-send.
-                    if self._evread.is_set():
-                        if preheader[4] & 0x01 == 1:  # only qos are re-send
-                            self._verbose and print("Dumping new message", header, line)
-                            continue
-                        else:
-                            self._verbose and print("Dumping old message", self._evread.value())
-                    self._evread.set((header, line))
-                if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
-                    await self._sendack(mid)
-                if c == self.connects:
-                    self.connects += 1  # update connect count
-        except OSError:
-            self._evfail.set('reader fail')  # ._run cancels other coros
+            except OSError:
+                self._evfail.set('reader fail')  # ._run cancels other coros
+            mid = preheader[0]
+            if preheader[4] & 0x2C == 0x2C:  # ACK
+                self._verbose and print("Got ack mid", mid)
+                self._acks_pend.discard(mid)
+                continue  # All done
+            # Discard dupes. mid == 0 : Server has power cycled
+            if not mid:
+                isnew(-1)  # Clear down rx message record
+            if isnew(mid):
+                # Old message still pending. Discard new one peer will re-send.
+                self._lines.append((header, line))
+            if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
+                await self._sendack(mid)
+            if c == self.connects:
+                self.connects += 1  # update connect count
 
     async def _sendack(self, mid):
         if self._ok is False:
@@ -485,8 +475,7 @@ class Client:
             if due <= 0:
                 async with self._s_lock:
                     if not await self._send(b'\n'):
-                        self._evfail.set('keepalive fail')
-                        return
+                         return
             else:
                 await asyncio.sleep_ms(due)
 
@@ -517,6 +506,7 @@ class Client:
                 self._ok = True
                 if line is not None:  # EOL
                     return preheader, header, line.decode()
+                self._feed(0)
                 line = None
                 preheader = None
                 header = None
@@ -592,12 +582,14 @@ class Client:
                 if err == errno.EAGAIN:  # Would block: await server read
                     await asyncio.sleep_ms(100)
                 else:
+                    self._evfail.set('_send fail. Disconnect')
                     return False  # peer disconnect
             else:
                 d = d[ns:]
                 if d:  # Partial write: pause
                     await asyncio.sleep_ms(20)
                 if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
+                    self._evfail.set('_send fail. Timeout.')
                     return False
 
         self._last_wr = utime.ticks_ms()

@@ -158,7 +158,7 @@ class Connection:
     @classmethod
     def close_all(cls):
         for conn in cls._conns.values():
-            conn._close()
+            conn._close('Connection {} closed by application'.format(conn._cl_id))
         if cls._server_sock is not None:
             cls._server_sock.close()
 
@@ -178,12 +178,12 @@ class Connection:
             print('Unknown client {} has connected. Expected {}.'.format(
                 client_id, Connection._expected))
 
+        self._getmid = gmid()  # Message ID generator
         # ._wr_pause set after initial or subsequent client connection. Cleared
         # after 1st keepalive received. We delay sending anything other than
         # keepalives while ._wr_pause is set
         self._wr_pause = True
         self._await_client = True  # Waiting for 1st received line.
-        self._getmid = gmid()  # Generator for message ID's
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
         self._acks_pend = set()  # ACKs which are expected to be received
@@ -204,7 +204,7 @@ class Connection:
 
     def status(self):
         return self._sock is not None
-    
+
     __call__ = status
 
     def __await__(self):
@@ -261,19 +261,19 @@ class Connection:
                     err = e.args[0]
                     if err == errno.EAGAIN:  # Would block: try later
                         if time.time() - start > self._to_secs:
-                            self._close()  # Unless it timed out.
+                            self._close('_read timeout')  # Unless it timed out.
                         else:
                             # Waiting for data from client. Limit CPU overhead.
                             await asyncio.sleep(TIM_TINY)
                     else:
-                        self._close()  # Reset by peer 104
+                        self._close('_read reset by peer 104')
                 else:
                     start = time.time()  # Something was received
                     if self._await_client:  # 1st item after (re)start
                         self._await_client = False  # Enable write after delay
                         self._loop.create_task(self._client_active())
                     if d == b'':  # Reset by peer
-                        self._close()
+                        self._close('_read reset by peer')
                         continue
                     d = d.lstrip(b'\n')  # Discard leading KA's
                     if d == b'':  # Only KA's
@@ -422,18 +422,18 @@ class Connection:
             # Pyboard D despite completely different hardware.
             # Is it better to return immediately and delay subsequent writes?
             # Should the delay be handled at a higher level?
-            await asyncio.sleep(0.2)  # Disallow rapid writes: result in data loss
+            #await asyncio.sleep(0.2)  # Disallow rapid writes: result in data loss
             return True  # Success
-        self._verbose and print('Write fail: closing connection.')
-        self._close()
+        self._close('Write fail: closing connection.')
         return False
 
     def __getitem__(self, client_id):  # Return a Connection of another client
         return Connection._conns[client_id]
 
-    def _close(self):
+    def _close(self, reason=''):
         if self._sock is not None:
             self._verbose and print('fail detected')
+            self._verbose and reason and print('Reason:', reason)
             self._sock.close()
             self._sock = None
 
