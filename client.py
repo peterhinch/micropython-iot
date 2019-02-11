@@ -328,8 +328,8 @@ class Client:
             due = self._tim_ka - utime.ticks_diff(utime.ticks_ms(), self._last_wr)
             if due <= 0:
                 async with self._s_lock:
-                    if not await self._send(b'\n'):
-                         return
+                    # error sets ._evfail, .run cancels this coro
+                    await self._send(b'\n')
             else:
                 await asyncio.sleep_ms(due)
 
@@ -357,8 +357,10 @@ class Client:
             try:  # TEST
                 d = self._sock.readline()
             except Exception as e:
+                self._verbose and print('_readline exception')
                 raise
             if d == b'':
+                self._verbose and print('_readline peer disconnect')
                 raise OSError
             if d is None:  # Nothing received: wait on server
                 await asyncio.sleep_ms(0)
@@ -367,6 +369,7 @@ class Client:
             else:
                 line = b''.join((line, d))
             if utime.ticks_diff(utime.ticks_ms(), start) > to:
+                self._verbose and print('_readline timeout')
                 raise OSError
 
     async def _send(self, d):  # Write a line to socket.
