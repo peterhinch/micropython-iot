@@ -35,7 +35,7 @@ async def run(loop):
             c_sock, _ = s_sock.accept()  # get client socket
             c_sock.setblocking(False)
             loop.create_task(reader(c_sock))
-            loop.create_task(writer(c_sock))
+#            loop.create_task(writer(c_sock))
         await asyncio.sleep(0.2)
 
 async def reader(sock):

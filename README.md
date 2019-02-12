@@ -464,7 +464,7 @@ await the client status: `write` will pause until it can complete. If `write`
 is launched using `create_task` it is essential to check status otherwise
 during an outage unlimited numbers of coroutines will be created.
 
-The client buffers incoming message. To avoid uncontrolled queue growth
+The client buffers up to 20 incoming messages. To avoid excessive queue growth
 applications should have a single coroutine which spends most of its time
 awaiting incoming data.
 

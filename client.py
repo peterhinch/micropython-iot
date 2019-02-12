@@ -10,6 +10,7 @@ import gc
 
 gc.collect()
 import usocket as socket
+from ucollections import deque
 import uasyncio as asyncio
 gc.collect()
 from sys import platform
@@ -100,7 +101,7 @@ class Client:
         self._evfail = Event(100)  # 100ms pause
         self._s_lock = Lock()  # For internal send conflict.
         self._last_wr = utime.ticks_ms()
-        self._lines = []
+        self._lineq = deque((), 20, True)  # 20 entries, throw on overflow
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
         self._ok = False  # Set after 1st successful read
@@ -119,9 +120,9 @@ class Client:
     __call__ = status
 
     async def readline(self):
-        while not self._lines:
+        while not self._lineq:
             await asyncio.sleep_ms(self._tim_short)
-        return self._lines.pop(0)
+        return self._lineq.popleft()
 
     async def write(self, buf, qos=True, wait=True):
         if qos and wait:  # Disallow concurrent writes
@@ -315,7 +316,7 @@ class Client:
             if not mid:
                 isnew(-1)  # Clear down rx message record
             if isnew(mid):
-                self._lines.append(line[2:].decode())
+                self._lineq.append(line[2:].decode())
             if c == self.connects:
                 self.connects += 1  # update connect count
 

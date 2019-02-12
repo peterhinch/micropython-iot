@@ -196,9 +196,11 @@ class Connection:
     def __await__(self):
         if upython:
             while not self():
-                yield self._tim_short
-        else:  # CPython: Meet requirement for generator in __await__
-            return self._status_coro().__await__()
+                yield int(self._tim_short * 1000)
+        else: 
+            # CPython: Meet requirement for generator in __await__
+            # https://github.com/python/asyncio/issues/451
+            yield from self._status_coro().__await__()
 
     __iter__ = __await__  # MicroPython compatibility.
 
