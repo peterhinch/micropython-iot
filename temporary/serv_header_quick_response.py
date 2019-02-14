@@ -6,6 +6,9 @@
 # and results in the client throwing EAGAIN in sending direction until it throws ECONNABORTED at sock.readline()
 # and reconnects the wifi. Server will fail shortly after as the client closes the connection.
 
+# Server should wait at least 10ms before sending a message after receiving a message.
+# This however makes it necessary to ensure that the client does pause long enough.
+
 import sys
 
 upython = sys.implementation.name == 'micropython'

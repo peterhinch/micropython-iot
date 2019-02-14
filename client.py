@@ -101,7 +101,7 @@ class Client:
                             elif feed == WDT_CB and run:  # Timer callback and is running.
                                 cnt -= 1
                                 if cnt <= 0:
-                                    reset()
+                                    machine.reset()
 
                     return inner
 
@@ -292,8 +292,8 @@ class Client:
                     await self._send(buf)
                     if buf.endswith(b"\n") is False:
                         await self._send(b"\n")
-                    # if platform == 'pyboard':
-                    await asyncio.sleep_ms(200)  # Reduce message loss (why ???)
+                    if platform == 'pyboard':
+                        await asyncio.sleep_ms(200)  # Reduce message loss (why ???)
                 self._verbose and print('Sent data', preheader, header, buf, qos)
             except OSError:
                 self._evfail.set('writer fail')
@@ -316,12 +316,6 @@ class Client:
                     await asyncio.sleep_ms(50)
                 if mid in self._acks_pend:  # wait for ACK for one timeout period
                     print(utime.ticks_ms(), "ack not received")
-                    # self._evfail.set('timeout ACK')  # timeout, reset connection and try again
-                    # while self._ok:
-                    #    await asyncio.sleep_ms(self._tim_short)
-                    # Could theoretically result in a deadlock of reconnects with
-                    # multiple concurrent writes active
-                    # TODO: Test resilience without reconnects
                     continue
                 if self._mcw is False:
                     # if mcw are not allowed, let next coro write only after receiving an ACK
@@ -442,12 +436,15 @@ class Client:
             try:
                 preheader, header, line = await self._readline()  # OSError on fail
             except OSError:
+                print("OSError readline")
                 self._evfail.set('reader fail')  # ._run cancels other coros
+                return
             mid = preheader[0]
             if preheader[4] & 0x2C == 0x2C:  # ACK
                 self._verbose and print("Got ack mid", mid)
                 self._acks_pend.discard(mid)
                 continue  # All done
+            print("Got", preheader, line)
             # Discard dupes. mid == 0 : Server has power cycled
             if not mid:
                 isnew(-1)  # Clear down rx message record
@@ -474,8 +471,7 @@ class Client:
             due = self._tim_ka - utime.ticks_diff(utime.ticks_ms(), self._last_wr)
             if due <= 0:
                 async with self._s_lock:
-                    if not await self._send(b'\n'):
-                         return
+                    await self._send(b'\n')
             else:
                 await asyncio.sleep_ms(due)
 
@@ -489,50 +485,51 @@ class Client:
         header = None
         start = utime.ticks_ms()
         while True:
-            # get the length of the message part to read exactly what is needed.
-            if preheader is None:
-                cnt = 10
-            elif header is None and preheader[1] != 0:
-                cnt = preheader[1] * 2
-            elif line is None:
-                cnt = (preheader[3] << 8) | preheader[2]
-                if cnt == 0:
-                    line = b""
-                    cnt = 1  # new-line termination missing
-            else:
-                cnt = 1  # only newline-termination missing
-            d = await self._read_small(cnt, start)
-            if d is None:  # keepalive or EOL
-                self._ok = True
-                if line is not None:  # EOL
-                    return preheader, header, line.decode()
-                self._feed(0)
-                line = None
-                preheader = None
-                header = None
-                start = utime.ticks_ms()  # Blank line is keepalive
-                if led is not None:
-                    if isinstance(led, machine.Pin):
-                        led(not led())
-                    else:  # On Pyboard D
-                        led.toggle()
-                continue
-            if preheader is None:
-                try:
-                    preheader = bytearray(ubinascii.unhexlify(d))
-                except ValueError:
-                    print("Error converting preheader:", d)
+            async with self._s_lock:
+                # get the length of the message part to read exactly what is needed.
+                if preheader is None:
+                    cnt = 10
+                elif header is None and preheader[1] != 0:
+                    cnt = preheader[1] * 2
+                elif line is None:
+                    cnt = (preheader[3] << 8) | preheader[2]
+                    if cnt == 0:
+                        line = b""
+                        cnt = 1  # new-line termination missing
+                else:
+                    cnt = 1  # only newline-termination missing
+                d = await self._read_small(cnt, start)
+                if d is None:  # keepalive or EOL
+                    self._ok = True
+                    if line is not None:  # EOL
+                        return preheader, header, line.decode()
+                    self._feed(0)
+                    line = None
+                    preheader = None
+                    header = None
+                    start = utime.ticks_ms()  # Blank line is keepalive
+                    if led is not None:
+                        if isinstance(led, machine.Pin):
+                            led(not led())
+                        else:  # On Pyboard D
+                            led.toggle()
                     continue
-            elif header is None and preheader[1] != 0:
-                try:
-                    header = bytearray(ubinascii.unhexlify(d))
-                except ValueError:
-                    print("Error converting header:", d)
-                    continue
-            elif line is None:
-                line = d
-            else:
-                raise OSError  # got unexpected characters instead of \n
+                if preheader is None:
+                    try:
+                        preheader = bytearray(ubinascii.unhexlify(d))
+                    except ValueError:
+                        print("Error converting preheader:", d)
+                        continue
+                elif header is None and preheader[1] != 0:
+                    try:
+                        header = bytearray(ubinascii.unhexlify(d))
+                    except ValueError:
+                        print("Error converting header:", d)
+                        continue
+                elif line is None:
+                    line = d
+                else:
+                    raise OSError  # got unexpected characters instead of \n
 
     async def _read_small(self, cnt, start) -> bytes:
         """
@@ -546,6 +543,7 @@ class Client:
         rcnt = cnt
         while True:
             if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
+                print("Read timeout")
                 raise OSError
             try:
                 d = self._sock.recv(rcnt)
@@ -556,6 +554,7 @@ class Client:
                 else:
                     raise OSError
             if d == b'':
+                print("Connection broken")
                 raise OSError
             if d is None:  # Nothing received: wait on server
                 await asyncio.sleep_ms(0)
@@ -580,6 +579,7 @@ class Client:
             except OSError as e:
                 err = e.args[0]
                 if err == errno.EAGAIN:  # Would block: await server read
+                    print("EAGAIN send")
                     await asyncio.sleep_ms(100)
                 else:
                     self._evfail.set('_send fail. Disconnect')

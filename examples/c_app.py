@@ -22,7 +22,8 @@ class App:
     def __init__(self, loop, my_id, server, port, timeout, verbose):
         self.verbose = verbose
         led = None  # Pin(2, Pin.OUT, value=1)  # Optional LED
-        self.cl = client.Client(loop, my_id, server, port, timeout, self.constate, None, verbose, led, in_order=True)
+        self.cl = client.Client(loop, my_id, server, port, timeout=timeout, conn_cb=self.constate,
+                                verbose=verbose, led=led, wdog=False, in_order=True)
         loop.create_task(self.start(loop))
         self.latency_added = 0
         self.count = 0

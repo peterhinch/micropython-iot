@@ -47,6 +47,39 @@ else:
 PORT = 8888
 
 
+class Lock:
+    def __init__(self, delay_ms=0):
+        self._locked = False
+        self.delay_ms = delay_ms
+
+    def locked(self):
+        return self._locked
+
+    async def __aenter__(self):
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, *args):
+        self.release()
+        await asyncio.sleep(0)
+
+    async def acquire(self):
+        while True:
+            if self._locked:
+                await asyncio.sleep(self.delay_ms / 1000)
+            else:
+                self._locked = True
+                break
+
+    def release(self):
+        if not self._locked:
+            raise RuntimeError('Attempt to release a lock which has not been set')
+        self._locked = False
+
+
+lock = Lock()
+
+
 # Create message ID's. Initially 0 then 1 2 ... 254 255 1 2
 def gmid():
     mid = 0
@@ -85,7 +118,8 @@ async def reader(sock):
     try:
         while True:
             try:
-                d = sock.recv(4096)  # bytes object
+                async with lock:
+                    d = sock.recv(4096)  # bytes object
             except OSError as e:
                 err = e.args[0]
                 if err == errno.EAGAIN:  # Would block: try later
@@ -132,22 +166,24 @@ async def writer(sock):
     data = [0, 'Message from server.']
     try:
         while True:
-            d = ''
-            mid = next(getmid)
-            d = json.dumps(data)
-            preheader = bytearray(5)
-            preheader[0] = mid
-            preheader[1] = 0
-            preheader[2] = (len(d) & 0xFF)
-            preheader[3] = (len(d) >> 8) & 0xFF  # allows for 65535 message length
-            preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
-            preheader[4] |= 0x01  # qos==True, request ACK
-            preheader = binascii.hexlify(preheader)
-            message = preheader.decode() + d + "\n"
-            await send(sock, message.encode('utf8'))
-            data[0] += 1
-            print('sent', message)
-            await asyncio.sleep(0.25)  # ???
+            for _ in range(4):
+                d = ''
+                mid = next(getmid)
+                d = json.dumps(data)
+                preheader = bytearray(5)
+                preheader[0] = mid
+                preheader[1] = 0
+                preheader[2] = (len(d) & 0xFF)
+                preheader[3] = (len(d) >> 8) & 0xFF  # allows for 65535 message length
+                preheader[4] = 0  # special internal usages, e.g. for esp_link or ACKs
+                preheader[4] |= 0x01  # qos==True, request ACK
+                preheader = binascii.hexlify(preheader)
+                message = preheader.decode() + d + "\n"
+                async with lock:
+                    await send(sock, message.encode('utf8'))
+                data[0] += 1
+                print('sent', message)
+            await asyncio.sleep(1)  # ???
     except Exception as e:
         raise e
     finally:

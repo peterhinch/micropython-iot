@@ -8,7 +8,7 @@ else:
 
     MY_ID = ubinascii.hexlify(machine.unique_id()).decode()  # '1\n'  # Client-unique \n terminated string
 PORT = 8888
-TIMEOUT = 1500  # ms. Share between client.py and server.py
+TIMEOUT = 5000  # ms. Share between client.py and server.py
 # My boxes
 SERVER = '192.168.178.60'  # Laptop
 # SERVER = '192.168.0.33'  # Pi
