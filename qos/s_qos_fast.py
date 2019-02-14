@@ -73,6 +73,8 @@ class App:
                 self.tx_msg_id += 1
                 count += 1
                 await self.conn  # Only launch write if link is up
+                # while not self.conn():
+                # await asyncio.sleep(0.05)
                 print('Sent {} to remote {}\n'.format(data, self.client_id))
                 loop.create_task(self.conn.write(json.dumps(data), wait=False))
             await asyncio.sleep(3.95)

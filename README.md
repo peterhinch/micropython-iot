@@ -111,6 +111,9 @@ but one which persists through outages and offers guaranteed message delivery.
   8.1 [Latency and throughput](./README.md#81-latency-and-throughput)  
   8.2 [Client RAM utilisation](./README.md#82-client-ram-utilisation)  
  9. [Extension to the Pyboard](./README.md#9-extension-to-the-pyboard)  
+ 10. [How it works](./README.md#10-how-it-works)  
+  10.1 [Interface and client module](./README.md#101-interface-and-client-module)  
+  10.2 [Server module](./README.md#102-server-module)
 
 # 2. Design
 
@@ -439,7 +442,8 @@ most cases they can be ignored.
  4. `bad_server`
 
 Methods (synchronous):
- 1. `status` Returns `True` if connectivity is present.
+ 1. `status` Returns `True` if connectivity is present. May also be read using
+ function call syntax (via `__call__`).
  2. `close` Closes the socket. Should be called in the event of an exception
  such as a `ctrl-c` interrupt. Also cancels the WDT in the case of a software
  WDT.
@@ -455,10 +459,14 @@ await client_instance
 ```
 is issued, the coroutine will pause until connectivity is (re)established.
 
-The client only buffers a single incoming message. Applications should have a
-coroutine which spends most of its time awaiting incoming data. If messages
-sent with `qos==True` are not read in a timely fashion the server will
-retransmit them to ensure reception. Messages with `qos==False` may be lost.
+Applications which always `await` the `write` method do not need to check or
+await the client status: `write` will pause until it can complete. If `write`
+is launched using `create_task` it is essential to check status otherwise
+during an outage unlimited numbers of coroutines will be created.
+
+The client buffers up to 20 incoming messages. To avoid excessive queue growth
+applications should have a single coroutine which spends most of its time
+awaiting incoming data.
 
 ###### [Contents](./README.md#1-contents)
 
@@ -574,9 +582,22 @@ if __name__ == "__main__":
 
 ## 5.1 The server module
 
-This is based on the `Connection` class. A `Connection` instance provides a
-communication channel to a specific ESP8266 client. The `Connection` instance
-for a given client is a singleton and is acquired by issuing
+Server-side applications should create and run a `server.run` task. This runs
+forever and takes the following args:
+ 1. `loop` The event loop.
+ 2. `expected` A set of expected client ID strings.
+ 3. `verbose=False` If `True` output diagnostic messages.
+ 4. `port=8123` TCP/IP port for connection. Must match clients.
+ 5. `timeout=1500` Timeout for outage detection in ms. Must match the timeout
+ of all `Client` instances.
+
+The `expected` arg causes the server to produce a warning message if an
+unexpected client connects, or if multiple clients have the same ID (this will
+cause tears before bedtime).
+
+The module is based on the `Connection` class. A `Connection` instance provides
+a communication channel to a specific client. The `Connection` instance for a
+given client is a singleton and is acquired by issuing
 ```python
 conn = await server.client_conn(client_id)
 ```
@@ -608,7 +629,12 @@ The `Connection` class is awaitable. If
 ```python
 await connection_instance
 ```
-is isuued, the coroutine will pause until connectivity is (re)established.
+is issued, the coroutine will pause until connectivity is (re)established.
+
+Applications which always `await` the `write` method do not need to check or
+await the server status: `write` will pause until it can complete. If `write`
+is launched using `create_task` it is essential to check status otherwise
+during an outage unlimited numbers of coroutines will be created.
 
 The server buffers incoming messages but it is good practice to have a coro
 which spends most of its time waiting for incoming data.
@@ -785,3 +811,75 @@ Resilient behaviour includes automatic recovery from WiFi and server outages;
 also from ESP8266 crashes.
 
 See [documentation](./pb_link/README.md).
+
+# 10. How it works
+
+## 10.1 Interface and client module
+
+The `client` module was designed on the expectation that client applications
+will usually be simple: acquiring data from sensors and periodically sending it
+to the server and/or receiving data from the server and using it to control
+devices. Developers of such applications probably don't need to be concerned
+with the operation of the module.
+
+There are ways in which applications can interfere with the interface's
+operation either by blocking or by attempting to operate at excessive data
+rates. Such designs can produce an erroneous appearance of poor WiFi
+connectivity.
+
+Outages are detected by a timeout of the receive tasks at either end. Each peer
+sends periodic `keepalive` messages consisting of a single newline character,
+and each peer has a continuously running read task. If no message is received
+in the timeout period (1.5s by default) an outage is declared.
+
+From the client's perspective an outage may be of the WiFi or the server. In
+practice WiFi outages are more common: server outages on a LAN are typically
+caused by the developer testing new code. The client assumes a WiFi outage. It
+disconnects from the network for long enough to ensure that the server detects
+the outage. It then attempts repeatedly to reconnect. When it does so, it
+checks that the connection is stable for a period (it might be near the limit
+of WiFi range).
+
+If this condition is met it attempts to reconnect to the server. If this
+succeeds the client runs. Its status becomes `True` when it first receives data
+from the server.
+
+A client or server side application which blocks or hogs processor time can
+prevent the timely transmission of `keepalive` messages. This will cause the
+server to declare an outage: the consequence is a sequence of disconnect
+and reconnect events even in the presence of a strong WiFi signal.
+
+## 10.2 Server module
+
+Server-side applications communicate via a `Connection` instance. This is
+unique to a client. It is instantiated when a specified client first connects
+and exists forever. During an outage its status becomes `False` for the
+duration. The `Connection` instance is retrieved as follows, with the
+`client_conn` method pausing until initial connectivity has been achieved:
+```python
+import server
+# Class details omitted
+    self.conn = await server.client_conn(self.client_id)
+```
+Each client must have a unique ID. When the server detects an incoming
+connection on the port it reads the client ID from the client. If a
+`Connection` instance exists for that ID its status is updated, otherwise a
+`Connection` is instantiated.
+
+The `Connection` has a continuously running coroutine `._read` which reads data
+from the client. If an outage occurs it calls the `._close` method which closes
+the socket, setting the bound variable `._sock` to `None`. This corresponds to
+a `False` status. The `._read` method pauses until a new connection occurs. The
+aim here is to read data from ESP8266 clients as soon as possible to minimise
+risk of buffer overflows.
+
+The `Connection` detects an outage by means of a timeout in the `._read`
+method: if no data or `keepalive` is received in that period an outage is
+declared, the socket is closed, and the `Connection` status becomes `False`.
+
+The `Connection` has a `._keepalive` method. This regularly sends `keepalive`
+messages to the client. Application code which blocks the scheduler can cause
+this not to be scheduled in a timely fashion with the result that the client
+declares an outage and disconnects. The consequence is a sequence of disconnect
+and reconnect events even in the presence of a strong WiFi signal.
+

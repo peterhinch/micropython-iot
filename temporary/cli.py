@@ -56,7 +56,7 @@ async def writer(sock):
         d = '{}\n'.format(json.dumps(data))
         await send(sock, d.encode('utf8'))
         data[0] += 1
-        await asyncio.sleep_ms(253)  # ???
+        await asyncio.sleep_ms(1000) #(253)  # ???
 
 
 async def readline(sock):

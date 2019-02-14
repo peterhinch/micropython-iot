@@ -10,6 +10,7 @@ import gc
 
 gc.collect()
 import usocket as socket
+from ucollections import deque
 import uasyncio as asyncio
 
 gc.collect()
@@ -126,7 +127,7 @@ class Client:
         self._evfail = Event(100)  # 100ms pause
         self._s_lock = Lock()  # For internal send conflict.
         self._last_wr = utime.ticks_ms()
-        self._lines = []
+        self._lineq = deque((), 20, True)  # 20 entries, throw on overflow
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
         self._ok = False  # Set after 1st successful read
@@ -168,9 +169,9 @@ class Client:
         Header can be None if not used.
         :return: header, line
         """
-        while not self._lines:
+        while not self._lineq:
             await asyncio.sleep_ms(self._tim_short)
-        return self._lines.pop(0)
+        return self._lineq.popleft()
 
     async def writeline(self, buf, qos=True):
         """
@@ -450,7 +451,7 @@ class Client:
                 isnew(-1)  # Clear down rx message record
             if isnew(mid):
                 # Old message still pending. Discard new one peer will re-send.
-                self._lines.append((header, line))
+                self._lineq.append((header, line))
             if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
                 await self._sendack(mid)
             if c == self.connects:
@@ -471,6 +472,7 @@ class Client:
             due = self._tim_ka - utime.ticks_diff(utime.ticks_ms(), self._last_wr)
             if due <= 0:
                 async with self._s_lock:
+                    # error sets ._evfail, .run cancels this coro
                     await self._send(b'\n')
             else:
                 await asyncio.sleep_ms(due)
@@ -543,7 +545,7 @@ class Client:
         rcnt = cnt
         while True:
             if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
-                print("Read timeout")
+                self._verbose and print('_readline timeout')
                 raise OSError
             try:
                 d = self._sock.recv(rcnt)
@@ -554,7 +556,7 @@ class Client:
                 else:
                     raise OSError
             if d == b'':
-                print("Connection broken")
+                self._verbose and print('_readline peer disconnect')
                 raise OSError
             if d is None:  # Nothing received: wait on server
                 await asyncio.sleep_ms(0)
