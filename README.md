@@ -413,7 +413,7 @@ Constructor args:
  4. `ssid=''` WiFi SSID. May be blank for ESP82666 with credentials in flash.
  5. `pw=''` WiFi password.
  6. `port=8123` The port the server listens on.
- 7. `timeout=1500` Connection timeout in ms. If a connection is unresponsive
+ 7. `timeout=2000` Connection timeout in ms. If a connection is unresponsive
  for longer than this period an outage is assumed.
  8. `conn_cb=None` Callback or coroutine that is called whenever the connection
  changes.
@@ -588,7 +588,7 @@ forever and takes the following args:
  2. `expected` A set of expected client ID strings.
  3. `verbose=False` If `True` output diagnostic messages.
  4. `port=8123` TCP/IP port for connection. Must match clients.
- 5. `timeout=1500` Timeout for outage detection in ms. Must match the timeout
+ 5. `timeout=2000` Timeout for outage detection in ms. Must match the timeout
  of all `Client` instances.
 
 The `expected` arg causes the server to produce a warning message if an
@@ -641,7 +641,7 @@ which spends most of its time waiting for incoming data.
 
 Server module coroutines:
 
- 1. `run` Args: `loop` `expected` `verbose=False` `port=8123` `timeout=1500`
+ 1. `run` Args: `loop` `expected` `verbose=False` `port=8123` `timeout=2000`
  This is the main coro and starts the system. 
  `loop` is the event loop.  
  `expected` is a set containing the ID's of all clients.  
@@ -782,11 +782,13 @@ latency will inevitably persist for the duration.
 
 **TIMEOUT**
 
-This defaults to 1.5s. On `Client` it is a constructor argument, on the server
+This defaults to 2s. On `Client` it is a constructor argument, on the server
 it is an arg to `server.run`. Its value should be common to all clients and
 the sever. It determines the time taken to detect an outage and the frequency
-of `keepalive` packets. In principle a reduced time will improve throughput
-however we have not tested values <1.5s.
+of `keepalive` packets. This time was chosen on the basis of measured latency
+periods on WiFi networks. It may be increased at the expense of slower outage
+detection. Reducing it may result in spurious timeouts with unnecessary WiFi
+reconnections.
 
 ## 8.2 Client RAM utilisation
 
@@ -830,7 +832,7 @@ connectivity.
 Outages are detected by a timeout of the receive tasks at either end. Each peer
 sends periodic `keepalive` messages consisting of a single newline character,
 and each peer has a continuously running read task. If no message is received
-in the timeout period (1.5s by default) an outage is declared.
+in the timeout period (2s by default) an outage is declared.
 
 From the client's perspective an outage may be of the WiFi or the server. In
 practice WiFi outages are more common: server outages on a LAN are typically

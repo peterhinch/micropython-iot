@@ -33,7 +33,7 @@ gc.collect()
 
 class Client:
     def __init__(self, loop, my_id, server, ssid='', pw='',
-                 port=8123, timeout=1500,
+                 port=8123, timeout=2000,
                  conn_cb=None, conn_cb_args=None,
                  verbose=False, led=None, wdog=False):
         self._loop = loop
@@ -44,7 +44,7 @@ class Client:
         self._port = port
         self._to = timeout  # Client and server timeout
         self._tim_short = timeout // 10
-        self._tim_ka = timeout // 2  # Keepalive interval
+        self._tim_ka = timeout // 4  # Keepalive interval
         self._concb = conn_cb
         self._concbargs = () if conn_cb_args is None else conn_cb_args
         self._verbose = verbose
@@ -121,7 +121,7 @@ class Client:
 
     async def readline(self):
         while not self._lineq:
-            await asyncio.sleep_ms(self._tim_short)
+            await asyncio.sleep(0)
         return self._lineq.popleft()
 
     async def write(self, buf, qos=True, wait=True):
@@ -316,7 +316,11 @@ class Client:
             if not mid:
                 isnew(-1)  # Clear down rx message record
             if isnew(mid):
-                self._lineq.append(line[2:].decode())
+                try:
+                    self._lineq.append(line[2:].decode())
+                except IndexError:
+                    self._evfail.set('_reader fail. Overflow.')
+                    return
             if c == self.connects:
                 self.connects += 1  # update connect count
 
@@ -349,13 +353,12 @@ class Client:
                 # Got a keepalive: discard, reset timers, toggle LED.
                 self._feed(0)
                 line = b''
-                start = utime.ticks_ms()
                 if led is not None:
                     if isinstance(led, machine.Pin):
                         led(not led())
                     else:  # On Pyboard D
                         led.toggle()
-            try:  # TEST
+            try:
                 d = self._sock.readline()
             except Exception as e:
                 self._verbose and print('_readline exception')
@@ -364,14 +367,13 @@ class Client:
                 self._verbose and print('_readline peer disconnect')
                 raise OSError
             if d is None:  # Nothing received: wait on server
+                if utime.ticks_diff(utime.ticks_ms(), start) > to:
+                    self._verbose and print('_readline timeout')
+                    raise OSError
                 await asyncio.sleep_ms(0)
-            elif line == b'':
-                line = d
-            else:
-                line = b''.join((line, d))
-            if utime.ticks_diff(utime.ticks_ms(), start) > to:
-                self._verbose and print('_readline timeout')
-                raise OSError
+            else:  # Something received: reset timer
+                start = utime.ticks_ms()
+                line = b''.join((line, d)) if line else d
 
     async def _send(self, d):  # Write a line to socket.
         start = utime.ticks_ms()
