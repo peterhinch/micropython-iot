@@ -223,13 +223,10 @@ class Client:
 
         # Break out on success (or fail after 10s).
         await self._got_wifi(s)
-
-        t = utime.ticks_ms()
-        self._verbose and print('Checking WiFi stability for {}ms'.format(2 * self._to))
+        self._verbose and print('Checking WiFi stability for 3s')
         # Timeout ensures stable WiFi and forces minimum outage duration
-        while s.isconnected() and utime.ticks_diff(utime.ticks_ms(), t) < 2 * self._to:
-            await asyncio.sleep(1)
-            self._feed(0)
+        await asyncio.sleep(3)
+        self._feed(0)
 
     async def _run(self, loop):
         # ESP8266 stores last good connection. Initially give it time to re-establish
