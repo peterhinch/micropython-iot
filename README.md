@@ -199,6 +199,7 @@ MY_ID = '1'  # Client-unique string.
 SERVER = '192.168.0.41'  # Server IP address.
 SSID = 'my_ssid'
 PW = 'WiFi_password'
+PORT = 8123
 ```
 
 The ESP8266 can store WiFi credentials in flash memory. If desired, ESP8266
