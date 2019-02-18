@@ -22,9 +22,9 @@ reliability is therefore paramount. Security is also a factor for endpoints
 exposed to the internet.
 
 Under MicroPython the available hardware for endpoints is limited. Testing has
-been done on the ESP8266 and the Pyboard D. The ESP32 had a fatal flaw which
-has [recently been fixed](https://github.com/micropython/micropython/issues/4269).
-I haven't yet had the time to establish its current level of resilience.
+been done on the ESP8266 and the Pyboard D. The ESP32 running official firmware
+V1.10 remains incapable of coping with WiFi outages: see
+[Appendix 1 ESP32](./README.md#appendix-1-esp32).
 
 The ESP8266 remains as a readily available inexpensive device which, with care,
 is capable of long term reliable operation. It does suffer from limited
@@ -113,7 +113,8 @@ but one which persists through outages and offers guaranteed message delivery.
  9. [Extension to the Pyboard](./README.md#9-extension-to-the-pyboard)  
  10. [How it works](./README.md#10-how-it-works)  
   10.1 [Interface and client module](./README.md#101-interface-and-client-module)  
-  10.2 [Server module](./README.md#102-server-module)
+  10.2 [Server module](./README.md#102-server-module)  
+ [Appendix 1 ESP32](./README.md#appendix-1-esp32)
 
 # 2. Design
 
@@ -171,12 +172,12 @@ installation on that platform.
 
 #### Firmware/Dependency
 
+On all client platforms firmware must be V1.9.10 or later.
+
 On ESP8266 it is easiest to use the latest release build of firmware: such
 builds incorporate `uasyncio` as frozen bytecode. Daily builds do not.
 Alternatively to maximise free RAM, firmware can be built from source, freezing
 `uasyncio`, `client.py` and `__init__.py` as bytecode.
-
-On ESP8266 release build V1.9.10 or later is strongly recommended.
 
 Note that if `uasyncio` is to be installed it should be acquired from 
 [official micropython-lib](https://github.com/micropython/micropython-lib). It
@@ -885,3 +886,18 @@ this not to be scheduled in a timely fashion with the result that the client
 declares an outage and disconnects. The consequence is a sequence of disconnect
 and reconnect events even in the presence of a strong WiFi signal.
 
+# Appendix 1 ESP32
+
+Using official firmware V1.10 the ESP32 seems incapable of recovering from an
+outage. The client initially connects and runs. When an outage occurs this is
+detected in the usual way by a timeout. Unfortunately I failed to discover a
+strategy for detecting when the outage was over. The station interface
+`isconnected` method always returns `True` even if you explicitly disconnect.
+You can issue a `connect` statement but I could find no way to determine
+whether the attempt was successful.
+
+In my view the ESP32 running official MicroPython remains unsuitable for a
+resilient link.
+
+Contributions and suggestions are invited. Also any test results for the
+Loboris port.

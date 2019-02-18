@@ -37,7 +37,7 @@ class Client:
                  conn_cb=None, conn_cb_args=None,
                  verbose=False, led=None, wdog=False):
         self._loop = loop
-        self._my_id = my_id if my_id.endswith('\n') else '{}{}'.format(my_id, '\n')
+        self._my_id = '{}{}'.format(my_id, '\n')  # Ensure >= 1 newline
         self._server = server
         self._ssid = ssid
         self._pw = pw
@@ -49,7 +49,6 @@ class Client:
         self._concbargs = () if conn_cb_args is None else conn_cb_args
         self._verbose = verbose
         self._led = led
-        self._wdog = wdog
 
         if wdog:
             if platform == 'pyboard':
@@ -84,16 +83,9 @@ class Client:
         else:
             self._feed = lambda x: None
 
-        if platform == 'esp8266':
             self._sta_if = network.WLAN(network.STA_IF)
             ap = network.WLAN(network.AP_IF) # create access-point interface
-            ap.active(False)         # deactivate the interface
-        elif platform == 'pyboard':
-            self._sta_if = network.WLAN()
-        elif ESP32:
-            self._sta_if = network.WLAN(network.STA_IF)
-        else:
-            raise OSError(platform, 'is unsupported.')
+            ap.active(False)  # deactivate the interface
 
         self._sta_if.active(True)
         gc.collect()
@@ -150,9 +142,9 @@ class Client:
         s = self._sta_if
         if s.isconnected():
             return
-        if ESP32:  # Maybe none of this is needed now?
+        if ESP32:  # Is this still needed?
             s.disconnect()
-            # utime.sleep_ms(20)  # Hopefully no longer required
+            utime.sleep_ms(20)  # Hopefully no longer required
             await asyncio.sleep(1)
 
         while True:  # For the duration of an outage
@@ -168,14 +160,14 @@ class Client:
 
     def _close(self):
         self._verbose and print('Closing sockets.')
-        if isinstance(self._sock, socket.socket):
+        if self._sock is not None:  # ESP32 issue #4514
             self._sock.close()
 
     # Await a WiFi connection for 10 secs.
     async def _got_wifi(self, s):
         for _ in range(20):  # Wait t s for connect. If it fails assume an outage
-            #if ESP32:  # Hopefully no longer needed
-                #utime.sleep_ms(20)
+            if ESP32:  # Hopefully no longer needed
+                utime.sleep_ms(20)
             await asyncio.sleep_ms(500)
             self._feed(0)
             if s.isconnected():
