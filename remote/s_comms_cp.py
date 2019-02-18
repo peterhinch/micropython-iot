@@ -22,6 +22,8 @@ else:
 
 from micropython_iot import server
 
+from .local import PORT
+
 
 class App:
     data = None
@@ -71,7 +73,7 @@ def run():
     loop = asyncio.get_event_loop()
     apps = [App(loop, name) for name in clients]  # Accept 2 clients
     try:
-        loop.run_until_complete(server.run(loop, clients, False))
+        loop.run_until_complete(server.run(loop, clients, False, port=PORT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

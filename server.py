@@ -30,8 +30,6 @@ else:
     import errno
     Lock = asyncio.Lock
 
-from . import gmid
-
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
 # Read the node ID. There isn't yet a Connection instance.

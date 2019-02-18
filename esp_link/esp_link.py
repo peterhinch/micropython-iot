@@ -27,9 +27,8 @@ PW = const(6)
 
 class LinkClient(client.Client):
     def __init__(self, loop, config, swriter, verbose):
-        super().__init__(loop, config[ID], config[SERVER],
-                         config[SSID], config[PW],
-                         config[PORT], config[TIMEOUT],
+        super().__init__(loop, config[ID], config[SERVER], config[PORT],
+                         config[SSID], config[PW], config[TIMEOUT],
                          conn_cb=self.conn_cb, verbose=verbose)
         self.config = config
         self.swriter = swriter

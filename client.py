@@ -1,7 +1,7 @@
 # client.py Client class for resilient asynchronous IOT communication link.
 
 # Released under the MIT licence.
-# Copyright (C) Peter Hinch, Kevin Köck 2018
+# Copyright (C) Peter Hinch, Kevin Köck 2019
 
 # After sending ID now pauses before sending further data to allow server to
 # initiate read task.
@@ -12,6 +12,7 @@ gc.collect()
 import usocket as socket
 from ucollections import deque
 import uasyncio as asyncio
+
 gc.collect()
 from sys import platform
 import network
@@ -19,8 +20,10 @@ import utime
 import machine
 import errno
 from . import gmid, isnew, launch, Event, Lock, SetByte  # __init__.py
+
 gc.collect()
 from micropython import const
+
 WDT_CANCEL = const(-2)
 WDT_CB = const(-3)
 
@@ -32,8 +35,8 @@ gc.collect()
 
 
 class Client:
-    def __init__(self, loop, my_id, server, ssid='', pw='',
-                 port=8123, timeout=2000,
+    def __init__(self, loop, my_id, server, port=8123,
+                 ssid='', pw='', timeout=2000,
                  conn_cb=None, conn_cb_args=None,
                  verbose=False, led=None, wdog=False):
         self._loop = loop
@@ -53,19 +56,23 @@ class Client:
         if wdog:
             if platform == 'pyboard':
                 self._wdt = machine.WDT(0, 20000)
+
                 def wdt():
                     def inner(feed=0):  # Ignore control values
                         if not feed:
                             self._wdt.feed()
+
                     return inner
+
                 self._feed = wdt()
             else:
                 def wdt(secs=0):
                     timer = machine.Timer(-1)
                     timer.init(period=1000, mode=machine.Timer.PERIODIC,
-                               callback=lambda t:self._feed())
+                               callback=lambda t: self._feed())
                     cnt = secs
                     run = False  # Disable until 1st feed
+
                     def inner(feed=WDT_CB):
                         nonlocal cnt, run, timer
                         if feed == 0:  # Fixed timeout
@@ -77,14 +84,16 @@ class Client:
                             elif feed == WDT_CB and run:  # Timer callback and is running.
                                 cnt -= 1
                                 if cnt <= 0:
-                                    reset()
+                                    machine.reset()
+
                     return inner
+
                 self._feed = wdt(20)
         else:
             self._feed = lambda x: None
 
             self._sta_if = network.WLAN(network.STA_IF)
-            ap = network.WLAN(network.AP_IF) # create access-point interface
+            ap = network.WLAN(network.AP_IF)  # create access-point interface
             ap.active(False)  # deactivate the interface
 
         self._sta_if.active(True)
@@ -106,6 +115,8 @@ class Client:
         while not self():
             yield from asyncio.sleep_ms(self._tim_short)
 
+    __await__ = __iter__
+
     def status(self):
         return self._ok
 
@@ -121,7 +132,7 @@ class Client:
             while self._acks_pend:
                 await asyncio.sleep_ms(50)
         # Prepend message ID to a copy of buf
-        fstr =  '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
+        fstr = '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
         mid = next(getmid)
         self._acks_pend.add(mid)
         buf = fstr.format(mid, buf)
@@ -247,6 +258,14 @@ class Client:
                 serv = socket.getaddrinfo(self._server, self._port)[0][-1]  # server read
                 # If server is down OSError e.args[0] = 111 ECONNREFUSED
                 self._sock.connect(serv)
+            except OSError as e:
+                if e.args[0] in (errno.ECONNABORTED, errno.ECONNRESET, errno.ECONNREFUSED):
+                    if init:
+                        await self.bad_server()
+                    self._sock.close()
+                    await asyncio.sleep(1)  # prevents spamming "WIFI OK" if verbose and server down
+                    continue  # possibly temporary server outage as not first connect
+            else:
                 self._sock.setblocking(False)
                 # Start reading before server can send: can't send until it
                 # gets ID.
@@ -254,35 +273,36 @@ class Client:
                 # Server reads ID immediately, but a brief pause is probably wise.
                 await asyncio.sleep_ms(50)
                 # No need for lock yet.
-                if not await self._send(self._my_id):
-                    raise OSError
-            except OSError:
-                if init:
-                    await self.bad_server()
-            else:
-                _keepalive = self._keepalive()
-                loop.create_task(_keepalive)
-                if self._concb is not None:
-                    # apps might need to know connection to the server acquired
-                    launch(self._concb, True, *self._concbargs)
-                await self._evfail  # Pause until something goes wrong
-                self._verbose and print(self._evfail.value())
-                self._ok = False
-                asyncio.cancel(_reader)
-                asyncio.cancel(_keepalive)
-                await asyncio.sleep_ms(0)  # wait for cancellation
-                self._feed(0)  # _concb might block (I hope not)
-                if self._concb is not None:
-                    # apps might need to know if they lost connection to the server
-                    launch(self._concb, False, *self._concbargs)
-            finally:
-                init = False
-                self._close()  # Close socket but not wdt
-                s.disconnect()
-                self._feed(0)
-                await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage
-                while s.isconnected():
-                    await asyncio.sleep(1)
+                try:
+                    if not await self._send(self._my_id):
+                        raise OSError
+                except OSError:
+                    if init:
+                        await self.bad_server()
+                else:
+                    _keepalive = self._keepalive()
+                    loop.create_task(_keepalive)
+                    if self._concb is not None:
+                        # apps might need to know connection to the server acquired
+                        launch(self._concb, True, *self._concbargs)
+                    await self._evfail  # Pause until something goes wrong
+                    self._verbose and print(self._evfail.value())
+                    self._ok = False
+                    asyncio.cancel(_reader)
+                    asyncio.cancel(_keepalive)
+                    await asyncio.sleep_ms(0)  # wait for cancellation
+                    self._feed(0)  # _concb might block (I hope not)
+                    if self._concb is not None:
+                        # apps might need to know if they lost connection to the server
+                        launch(self._concb, False, *self._concbargs)
+                finally:
+                    init = False
+                    self._close()  # Close socket but not wdt
+                    s.disconnect()
+                    self._feed(0)
+                    await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage
+                    while s.isconnected():
+                        await asyncio.sleep(1)
 
     async def _reader(self):  # Entry point is after a (re) connect.
         c = self.connects  # Count successful connects

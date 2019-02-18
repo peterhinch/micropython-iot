@@ -153,7 +153,7 @@ determine which physical client is associated with an incoming connection.
  1. `client.py` / `client.mpy` Client module. The ESP8266 has insufficient RAM
  to compile `client.py` so the precompiled `client.mpy` should be used.
  2. `__init__.py` Functions and classes common to many modules.
- 3. `server.py` Server module. (runs under CPython 3.5+ or MicroPython 1.9.10+).
+ 3. `server.py` Server module. (runs under CPython 3.5+ or MicroPython 1.10+).
  4. `examples` Package of a simple example. Up to four clients communicate with
  a single server instance.
  5. `remote` Package demonstrating using the library to enable one client to
@@ -172,7 +172,7 @@ installation on that platform.
 
 #### Firmware/Dependency
 
-On all client platforms firmware must be V1.9.10 or later.
+On all client platforms firmware must be V1.10 or later.
 
 On ESP8266 it is easiest to use the latest release build of firmware: such
 builds incorporate `uasyncio` as frozen bytecode. Daily builds do not.
@@ -359,7 +359,7 @@ import local  # or however you configure your project
 class App:
     def __init__(self, loop, verbose):
         self.cl = client.Client(loop, local.MY_ID, local.SERVER,
-                                local.SSID, local.PW,
+                                local.PORT, local.SSID, local.PW,
                                 conn_cb=self.state, verbose=verbose)
         loop.create_task(self.start(loop))
 
@@ -411,9 +411,9 @@ Constructor args:
  1. `loop` The event loop.
  2. `my_id` The client id.
  3. `server` The server IP-Adress to connect to.
- 4. `ssid=''` WiFi SSID. May be blank for ESP82666 with credentials in flash.
- 5. `pw=''` WiFi password.
- 6. `port=8123` The port the server listens on.
+ 4. `port=8123` The port the server listens on.
+ 5. `ssid=''` WiFi SSID. May be blank for ESP82666 with credentials in flash.
+ 6. `pw=''` WiFi password. 
  7. `timeout=2000` Connection timeout in ms. If a connection is unresponsive
  for longer than this period an outage is assumed.
  8. `conn_cb=None` Callback or coroutine that is called whenever the connection
@@ -793,7 +793,7 @@ reconnections.
 
 ## 8.2 Client RAM utilisation
 
-On ESP8266 with release build V1.9.10 the demo reports over 13KB free. Free RAM
+On ESP8266 with release build V1.10 the demo reports over 13KB free. Free RAM
 of 21.8KB was achieved with compiled firmware with `client.py`, `__init__.py`
 and `uasyncio` frozen as bytecode.
 
