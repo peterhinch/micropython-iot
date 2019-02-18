@@ -70,7 +70,7 @@ async def _readid(s, to_secs):
 # Allow 2 extra connections. This is to cater for error conditions like
 # duplicate or unexpected clients. Accept the connection and have the
 # Connection class produce a meaningful error message.
-async def run(loop, expected, verbose=False, port=8123, timeout=1500, in_order=False):
+async def run(loop, expected, verbose=False, port=8123, timeout=2000, in_order=False):
     addr = socket.getaddrinfo('0.0.0.0', port, 0, socket.SOCK_STREAM)[0][-1]
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -166,7 +166,7 @@ class Connection:
         self._loop = loop
         self._to_secs = to_secs
         self._tim_short = self._to_secs / 10
-        self._tim_ka = self._to_secs / 2  # Keepalive interval
+        self._tim_ka = self._to_secs / 4  # Keepalive interval
         self._sock = c_sock  # Socket
         self._cl_id = client_id
         self._verbose = verbose

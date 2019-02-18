@@ -22,9 +22,9 @@ reliability is therefore paramount. Security is also a factor for endpoints
 exposed to the internet.
 
 Under MicroPython the available hardware for endpoints is limited. Testing has
-been done on the ESP8266 and the Pyboard D. The ESP32 had a fatal flaw which
-has [recently been fixed](https://github.com/micropython/micropython/issues/4269).
-I haven't yet had the time to establish its current level of resilience.
+been done on the ESP8266 and the Pyboard D. The ESP32 running official firmware
+V1.10 remains incapable of coping with WiFi outages: see
+[Appendix 1 ESP32](./README.md#appendix-1-esp32).
 
 The ESP8266 remains as a readily available inexpensive device which, with care,
 is capable of long term reliable operation. It does suffer from limited
@@ -113,7 +113,8 @@ but one which persists through outages and offers guaranteed message delivery.
  9. [Extension to the Pyboard](./README.md#9-extension-to-the-pyboard)  
  10. [How it works](./README.md#10-how-it-works)  
   10.1 [Interface and client module](./README.md#101-interface-and-client-module)  
-  10.2 [Server module](./README.md#102-server-module)
+  10.2 [Server module](./README.md#102-server-module)  
+ [Appendix 1 ESP32](./README.md#appendix-1-esp32)
 
 # 2. Design
 
@@ -171,12 +172,12 @@ installation on that platform.
 
 #### Firmware/Dependency
 
+On all client platforms firmware must be V1.9.10 or later.
+
 On ESP8266 it is easiest to use the latest release build of firmware: such
 builds incorporate `uasyncio` as frozen bytecode. Daily builds do not.
 Alternatively to maximise free RAM, firmware can be built from source, freezing
 `uasyncio`, `client.py` and `__init__.py` as bytecode.
-
-On ESP8266 release build V1.9.10 or later is strongly recommended.
 
 Note that if `uasyncio` is to be installed it should be acquired from 
 [official micropython-lib](https://github.com/micropython/micropython-lib). It
@@ -413,7 +414,7 @@ Constructor args:
  4. `ssid=''` WiFi SSID. May be blank for ESP82666 with credentials in flash.
  5. `pw=''` WiFi password.
  6. `port=8123` The port the server listens on.
- 7. `timeout=1500` Connection timeout in ms. If a connection is unresponsive
+ 7. `timeout=2000` Connection timeout in ms. If a connection is unresponsive
  for longer than this period an outage is assumed.
  8. `conn_cb=None` Callback or coroutine that is called whenever the connection
  changes.
@@ -588,7 +589,7 @@ forever and takes the following args:
  2. `expected` A set of expected client ID strings.
  3. `verbose=False` If `True` output diagnostic messages.
  4. `port=8123` TCP/IP port for connection. Must match clients.
- 5. `timeout=1500` Timeout for outage detection in ms. Must match the timeout
+ 5. `timeout=2000` Timeout for outage detection in ms. Must match the timeout
  of all `Client` instances.
 
 The `expected` arg causes the server to produce a warning message if an
@@ -641,7 +642,7 @@ which spends most of its time waiting for incoming data.
 
 Server module coroutines:
 
- 1. `run` Args: `loop` `expected` `verbose=False` `port=8123` `timeout=1500`
+ 1. `run` Args: `loop` `expected` `verbose=False` `port=8123` `timeout=2000`
  This is the main coro and starts the system. 
  `loop` is the event loop.  
  `expected` is a set containing the ID's of all clients.  
@@ -782,11 +783,13 @@ latency will inevitably persist for the duration.
 
 **TIMEOUT**
 
-This defaults to 1.5s. On `Client` it is a constructor argument, on the server
+This defaults to 2s. On `Client` it is a constructor argument, on the server
 it is an arg to `server.run`. Its value should be common to all clients and
 the sever. It determines the time taken to detect an outage and the frequency
-of `keepalive` packets. In principle a reduced time will improve throughput
-however we have not tested values <1.5s.
+of `keepalive` packets. This time was chosen on the basis of measured latency
+periods on WiFi networks. It may be increased at the expense of slower outage
+detection. Reducing it may result in spurious timeouts with unnecessary WiFi
+reconnections.
 
 ## 8.2 Client RAM utilisation
 
@@ -830,7 +833,7 @@ connectivity.
 Outages are detected by a timeout of the receive tasks at either end. Each peer
 sends periodic `keepalive` messages consisting of a single newline character,
 and each peer has a continuously running read task. If no message is received
-in the timeout period (1.5s by default) an outage is declared.
+in the timeout period (2s by default) an outage is declared.
 
 From the client's perspective an outage may be of the WiFi or the server. In
 practice WiFi outages are more common: server outages on a LAN are typically
@@ -883,3 +886,18 @@ this not to be scheduled in a timely fashion with the result that the client
 declares an outage and disconnects. The consequence is a sequence of disconnect
 and reconnect events even in the presence of a strong WiFi signal.
 
+# Appendix 1 ESP32
+
+Using official firmware V1.10 the ESP32 seems incapable of recovering from an
+outage. The client initially connects and runs. When an outage occurs this is
+detected in the usual way by a timeout. Unfortunately I failed to discover a
+strategy for detecting when the outage was over. The station interface
+`isconnected` method always returns `True` even if you explicitly disconnect.
+You can issue a `connect` statement but I could find no way to determine
+whether the attempt was successful.
+
+In my view the ESP32 running official MicroPython remains unsuitable for a
+resilient link.
+
+Contributions and suggestions are invited. Also any test results for the
+Loboris port.

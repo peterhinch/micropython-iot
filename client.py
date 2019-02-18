@@ -25,7 +25,6 @@ import ubinascii
 gc.collect()
 from micropython import const
 
-WDT_SUSPEND = const(-1)
 WDT_CANCEL = const(-2)
 WDT_CB = const(-3)
 
@@ -38,7 +37,7 @@ gc.collect()
 
 class Client:
     def __init__(self, loop, my_id, server, port=8123,
-                 ssid='', pw='', timeout=1500,
+                 ssid='', pw='', timeout=2000,
                  conn_cb=None, conn_cb_args=None,
                  verbose=False, led=None, wdog=False,
                  in_order=False):
@@ -64,12 +63,11 @@ class Client:
         self._port = port
         self._to = timeout  # Client and server timeout
         self._tim_short = timeout // 10
-        self._tim_ka = timeout // 2  # Keepalive interval
+        self._tim_ka = timeout // 4  # Keepalive interval
         self._concb = conn_cb
         self._concbargs = () if conn_cb_args is None else conn_cb_args
         self._verbose = verbose
         self._led = led
-        self._wdog = wdog
 
         if wdog:
             if platform == 'pyboard':
@@ -170,7 +168,7 @@ class Client:
         :return: header, line
         """
         while not self._lineq:
-            await asyncio.sleep_ms(self._tim_short)
+            await asyncio.sleep(0)
         return self._lineq.popleft()
 
     async def writeline(self, buf, qos=True):
@@ -236,9 +234,9 @@ class Client:
         s = self._sta_if
         if s.isconnected():
             return
-        if ESP32:  # Maybe none of this is needed now?
+        if ESP32:  # Is this still needed?
             s.disconnect()
-            # utime.sleep_ms(20)  # Hopefully no longer required
+            utime.sleep_ms(20)  # Hopefully no longer required
             await asyncio.sleep(1)
 
         while True:  # For the duration of an outage
@@ -259,14 +257,14 @@ class Client:
 
     def _close(self):
         self._verbose and print('Closing sockets.')
-        if isinstance(self._sock, socket.socket):
+        if self._sock is not None:  # ESP32 issue #4514
             self._sock.close()
 
     # Await a WiFi connection for 10 secs.
     async def _got_wifi(self, s):
         for _ in range(20):  # Wait t s for connect. If it fails assume an outage
-            # if ESP32:  # Hopefully no longer needed
-            # utime.sleep_ms(20)
+            if ESP32:  # Hopefully no longer needed
+                utime.sleep_ms(20)
             await asyncio.sleep_ms(500)
             self._feed(0)
             if s.isconnected():
@@ -338,14 +336,10 @@ class Client:
 
         # Break out on success (or fail after 10s).
         await self._got_wifi(s)
-
-        t = utime.ticks_ms()
-        self._verbose and print('Checking WiFi stability for {}ms'.format(2 * self._to))
+        self._verbose and print('Checking WiFi stability for 3s')
         # Timeout ensures stable WiFi and forces minimum outage duration
-        # Also ensures that the server recognizes the outage
-        while s.isconnected() and utime.ticks_diff(utime.ticks_ms(), t) < 2 * self._to:
-            await asyncio.sleep(1)
-            self._feed(0)
+        await asyncio.sleep(3)
+        self._feed(0)
 
     async def _run(self, loop):
         # ESP8266 stores last good connection. Initially give it time to re-establish
@@ -437,7 +431,6 @@ class Client:
             try:
                 preheader, header, line = await self._readline()  # OSError on fail
             except OSError:
-                print("OSError readline")
                 self._evfail.set('reader fail')  # ._run cancels other coros
                 return
             mid = preheader[0]
@@ -450,8 +443,11 @@ class Client:
             if not mid:
                 isnew(-1)  # Clear down rx message record
             if isnew(mid):
-                # Old message still pending. Discard new one peer will re-send.
-                self._lineq.append((header, line))
+                try:
+                    self._lineq.append(line[2:].decode())
+                except IndexError:
+                    self._evfail.set('_reader fail. Overflow.')
+                    return
             if preheader[4] & 0x01 == 1:  # qos==True, send ACK even if dupe
                 await self._sendack(mid)
             if c == self.connects:
