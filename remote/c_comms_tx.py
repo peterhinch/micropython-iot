@@ -66,7 +66,8 @@ class App:
         self.switch.open_func(lambda: self.must_send.set())
         self.must_send = Event()
         self.cl = client.Client(loop, 'tx', local.SERVER, local.PORT,
-                                local.SSID, local.PW, verbose=verbose, led=led)
+                                local.SSID, local.PW, timeout=local.TIMEOUT,
+                                verbose=verbose, led=led)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):

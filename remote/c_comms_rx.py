@@ -19,7 +19,8 @@ class App:
         self.verbose = verbose
         self.led = Pin(2, Pin.OUT, value=1)  # LED for received data
         self.cl = client.Client(loop, 'rx', local.SERVER, local.PORT,
-                                local.SSID, local.PW, verbose=verbose)
+                                local.SSID, local.PW, local.TIMEOUT,
+                                verbose=verbose)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):

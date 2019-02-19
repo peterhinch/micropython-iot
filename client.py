@@ -262,9 +262,6 @@ class Client:
                 if e.args[0] in (errno.ECONNABORTED, errno.ECONNRESET, errno.ECONNREFUSED):
                     if init:
                         await self.bad_server()
-                    self._sock.close()
-                    await asyncio.sleep(1)  # prevents spamming "WIFI OK" if verbose and server down
-                    continue  # possibly temporary server outage as not first connect
             else:
                 self._sock.setblocking(False)
                 # Start reading before server can send: can't send until it
@@ -295,14 +292,14 @@ class Client:
                     if self._concb is not None:
                         # apps might need to know if they lost connection to the server
                         launch(self._concb, False, *self._concbargs)
-                finally:
-                    init = False
-                    self._close()  # Close socket but not wdt
-                    s.disconnect()
-                    self._feed(0)
-                    await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage
-                    while s.isconnected():
-                        await asyncio.sleep(1)
+            finally:
+                init = False
+                self._close()  # Close socket but not wdt
+                s.disconnect()
+                self._feed(0)
+                await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage
+                while s.isconnected():
+                    await asyncio.sleep(1)
 
     async def _reader(self):  # Entry point is after a (re) connect.
         c = self.connects  # Count successful connects

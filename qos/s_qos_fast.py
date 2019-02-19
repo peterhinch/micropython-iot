@@ -20,7 +20,8 @@ try:
 except ImportError:
     import ujson as json
 from micropython_iot import server
-from .local import PORT
+from .local import PORT, TIMEOUT
+
 
 class App:
     def __init__(self, loop, client_id):
@@ -73,8 +74,8 @@ class App:
                 self.tx_msg_id += 1
                 count += 1
                 await self.conn  # Only launch write if link is up
-                #while not self.conn():
-                    #await asyncio.sleep(0.05)
+                # while not self.conn():
+                # await asyncio.sleep(0.05)
                 print('Sent {} to remote {}\n'.format(data, self.client_id))
                 loop.create_task(self.conn.write(json.dumps(data), wait=False))
             await asyncio.sleep(3.95)
@@ -84,7 +85,7 @@ def run():
     loop = asyncio.get_event_loop()
     app = App(loop, 'qos')
     try:
-        loop.run_until_complete(server.run(loop, {'qos'}, True, port=PORT))
+        loop.run_until_complete(server.run(loop, {'qos'}, True, port=PORT, timeout=TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

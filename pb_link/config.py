@@ -16,7 +16,7 @@
 # Use empty string ('') in  SSID and PW to only connect to the WLAN which the
 # ESP8266 already "knows".
 # If Port or Timeout are changed, these values must be passed to server.run()
-config = [8123, '192.168.0.42', 1500, 10, 'MY_WIFI_SSID', 'PASSWORD']
+config = [8123, '192.168.0.42', 2000, 10, 'MY_WIFI_SSID', 'PASSWORD']
 
 try:
     from pyb import I2C  # Only pyb supports slave mode
