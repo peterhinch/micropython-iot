@@ -21,6 +21,7 @@ except ImportError:
     import ujson as json
 
 from micropython_iot import server
+from .local import PORT
 
 
 class App:
@@ -63,7 +64,7 @@ def run():
     clients = {'1', '2', '3', '4'}
     apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, clients, True))
+        loop.run_until_complete(server.run(loop, clients, True, port=PORT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

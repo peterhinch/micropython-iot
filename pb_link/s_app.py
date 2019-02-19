@@ -22,6 +22,8 @@ except ImportError:
 
 from micropython_iot import server
 
+PORT = 8123
+
 
 class App:
     def __init__(self, loop, client_id):
@@ -63,7 +65,7 @@ def run():
     clients = {'1', '2', '3', '4'}
     apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, clients, True))
+        loop.run_until_complete(server.run(loop, clients, True, port=PORT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:

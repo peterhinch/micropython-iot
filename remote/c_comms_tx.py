@@ -8,6 +8,7 @@
 
 import gc
 import uasyncio as asyncio
+
 gc.collect()
 from micropython_iot import client, Event, launch
 
@@ -15,7 +16,9 @@ gc.collect()
 import ujson
 from machine import Pin
 from . import local
+
 gc.collect()
+
 
 # Debounced switch. Stripped down version. For full version
 # see https://github.com/peterhinch/micropython-async.git
@@ -62,7 +65,7 @@ class App:
         self.switch.close_func(lambda: self.must_send.set())
         self.switch.open_func(lambda: self.must_send.set())
         self.must_send = Event()
-        self.cl = client.Client(loop, 'tx', local.SERVER,
+        self.cl = client.Client(loop, 'tx', local.SERVER, local.PORT,
                                 local.SSID, local.PW, verbose=verbose, led=led)
         loop.create_task(self.start(loop))
 

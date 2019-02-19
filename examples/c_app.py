@@ -26,7 +26,7 @@ gc.collect()
 class App(client.Client):
     def __init__(self, loop, verbose):
         self.verbose = verbose
-        self.cl = client.Client(loop, local.MY_ID, local.SERVER, local.SSID, local.PW,
+        self.cl = client.Client(loop, local.MY_ID, local.SERVER, local.PORT, local.SSID, local.PW,
                          conn_cb=self.constate, verbose=verbose, led=led, wdog=False)
         loop.create_task(self.start(loop))
 

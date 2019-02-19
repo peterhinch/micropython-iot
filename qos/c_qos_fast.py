@@ -28,7 +28,7 @@ class App:
     def __init__(self, loop, verbose):
         self.verbose = verbose
         self.cl = client.Client(loop, local.MY_ID, local.SERVER,
-                                local.SSID, local.PW,
+                                local.PORT, local.SSID, local.PW,
                                 verbose=verbose, led=led)
         self.tx_msg_id = 0
         self.dupes = 0  # Incoming dupe count
