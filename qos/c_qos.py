@@ -21,7 +21,7 @@ class App:
         led = Pin(2, Pin.OUT, value=1)  # Optional LED
         self.cl = client.Client(loop, local.MY_ID, local.SERVER,
                                 local.PORT, local.SSID, local.PW,
-                                verbose=verbose, led=led)
+                                local.TIMEOUT, verbose=verbose, led=led)
         self.tx_msg_id = 0
         self.dupes = 0  # Incoming dupe count
         self.missing = 0

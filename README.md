@@ -200,6 +200,7 @@ SERVER = '192.168.0.41'  # Server IP address.
 SSID = 'my_ssid'
 PW = 'WiFi_password'
 PORT = 8123
+TIMEOUT = 2000
 ```
 
 The ESP8266 can store WiFi credentials in flash memory. If desired, ESP8266
@@ -361,7 +362,8 @@ class App:
     def __init__(self, loop, verbose):
         self.cl = client.Client(loop, local.MY_ID, local.SERVER,
                                 local.PORT, local.SSID, local.PW,
-                                conn_cb=self.state, verbose=verbose)
+                                local.TIMEOUT, conn_cb=self.state, 
+                                verbose=verbose)
         loop.create_task(self.start(loop))
 
     async def start(self, loop):
