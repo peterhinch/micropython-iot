@@ -115,8 +115,6 @@ class Client:
         while not self():
             yield from asyncio.sleep_ms(self._tim_short)
 
-    __await__ = __iter__
-
     def status(self):
         return self._ok
 
