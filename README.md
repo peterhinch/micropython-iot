@@ -160,7 +160,7 @@ determine which physical client is associated with an incoming connection.
  control another.
  6. `qos` Package demonstrating the qos (qality of service) implementation, see
  [Quality of service](./README.md#7-quality-of-service).
- 7. `pb_link` Package enabling a Pyboard V1.x to commuicate with the server via
+ 7. `pb_link` Package enabling a Pyboard V1.x to communicate with the server via
  an ESP8266 connected by I2C. See [documentation](./pb_link/README.md).
  8. `esp_link` Package for the ESP8266 used in the Pyboard link.
 
@@ -200,6 +200,7 @@ SERVER = '192.168.0.41'  # Server IP address.
 SSID = 'my_ssid'
 PW = 'WiFi_password'
 PORT = 8123
+TIMEOUT = 2000
 ```
 
 The ESP8266 can store WiFi credentials in flash memory. If desired, ESP8266
@@ -243,7 +244,7 @@ commands (amend the boot device for non-ESP8266 clients):
 ```
 rshell -p /dev/ttyS3  # adapt the port to your situation
 mkdir /pyboard/micropython_iot   # create directory on your esp8266  
-cp client.py __init__.py /pyboard/micropython_iot/
+cp client.mpy __init__.py /pyboard/micropython_iot/
 cp -r examples /pyboard/micropython_iot/
 cp -r qos /pyboard/micropython_iot/
 cp -r remote /pyboard/micropython_iot/
@@ -257,7 +258,7 @@ This illustrates up to four clients communicating with the server. The demo
 expects the clients to have ID's in the range 1 to 4: if using multiple clients
 edit each one's `local.py` accordingly.
 
-On the server navigate to the parent directory of `micropython_iot`and run:
+On the server navigate to the parent directory of `micropython_iot` and run:
 ```
 python3 -m micropython_iot.examples.s_app_cp
 ```
@@ -802,7 +803,7 @@ and `uasyncio` frozen as bytecode.
 
 # 9. Extension to the Pyboard
 
-This extends the resilent link to MicroPython targets lacking a network
+This extends the resilient link to MicroPython targets lacking a network
 interface; for example the Pyboard V1.x. Connectivity is provided by an ESP8266
 running a fixed firmware build: this needs no user code.
 
