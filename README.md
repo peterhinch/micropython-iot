@@ -1,10 +1,10 @@
 # Introduction
 
 This library provides a resilient full duplex communication link between a WiFi
-connected board and a server on the wired LAN. The board may be an ESP8266 or
-other target including the Pyboard D. The design is such that the code can run
-for indefinite periods. Temporary WiFi or server outages are tolerated without
-message loss.
+connected board and a server on the wired LAN. The board may be an ESP8266,
+ESP32 or other target including the Pyboard D. The design is such that the code
+can run for indefinite periods. Temporary WiFi or server outages are tolerated
+without message loss.
 
 The API is simple and consistent between client and server applications,
 comprising `write` and `readline` methods. Guaranteed message delivery is
@@ -22,9 +22,8 @@ reliability is therefore paramount. Security is also a factor for endpoints
 exposed to the internet.
 
 Under MicroPython the available hardware for endpoints is limited. Testing has
-been done on the ESP8266 and the Pyboard D. The ESP32 running official firmware
-V1.10 remains incapable of coping with WiFi outages: see
-[Appendix 1 ESP32](./README.md#appendix-1-esp32).
+been done on the ESP8266, ESP32 and the Pyboard D. The ESP32 must run firmware
+dated on or after 25th March 2019.
 
 The ESP8266 remains as a readily available inexpensive device which, with care,
 is capable of long term reliable operation. It does suffer from limited
@@ -114,7 +113,6 @@ but one which persists through outages and offers guaranteed message delivery.
  10. [How it works](./README.md#10-how-it-works)  
   10.1 [Interface and client module](./README.md#101-interface-and-client-module)  
   10.2 [Server module](./README.md#102-server-module)  
- [Appendix 1 ESP32](./README.md#appendix-1-esp32)
 
 # 2. Design
 
@@ -172,7 +170,8 @@ installation on that platform.
 
 #### Firmware/Dependency
 
-On all client platforms firmware must be V1.10 or later.
+Firmware must be V1.10 or later; on ESP32 it must be more recent, specifically
+builds dated 25th March 2019 or later.
 
 On ESP8266 it is easiest to use the latest release build of firmware: such
 builds incorporate `uasyncio` as frozen bytecode. Daily builds do not.
@@ -190,7 +189,8 @@ On ESP8266 it is necessary to
 
 #### Preconditions
 
-The demo programs store client configuration data in a file `local.py`. This
+The demo programs store client configuration data in a file `local.py`. Each
+demo has its own `local.py` located in the directory of the demo code. This
 contains the following constants which should be edited to match local
 conditions:
 
@@ -312,8 +312,9 @@ from micropython_iot.qos import c_qos
 #### The fast qos demo
 
 This tests the option of concurrent `qos` writes. This is an advanced feature
-discussed in [section 7.1](./README.md#71-the-wait-argument). To run the demo,
-on the server navigate to the parent directory of `micropython_iot` and run:
+discussed in [section 7.1](./README.md#71-the-wait-argument). This demo runs
+but is not resilient on ESP32. See the above link. To run the demo, on the
+server navigate to the parent directory of `micropython_iot` and run:
 ```
 python3 -m micropython_iot.qos.s_qos_fast
 ```
@@ -753,6 +754,10 @@ number of such `qos` messages sent in quick succession: on ESP8266 clients
 buffer overflows can occur. Demands on `uasyncio` are increased: it may be
 necessary to amend the default queue sizes in `get_event_loop`.
 
+The ESP32 is not resilient under these circumstances. Setting `wait=False` is
+not recommended. If used, applications should be tested to verify resilience in
+the face of WiFi outages.
+
 If messages are sent with `wait=False` there is a chance that they may not be
 received in the order in which they were sent. As described above, in the event
 of `qos` message loss, retransmission occurs after a timeout period has
@@ -888,19 +893,3 @@ messages to the client. Application code which blocks the scheduler can cause
 this not to be scheduled in a timely fashion with the result that the client
 declares an outage and disconnects. The consequence is a sequence of disconnect
 and reconnect events even in the presence of a strong WiFi signal.
-
-# Appendix 1 ESP32
-
-Using official firmware V1.10 the ESP32 seems incapable of recovering from an
-outage. The client initially connects and runs. When an outage occurs this is
-detected in the usual way by a timeout. Unfortunately I failed to discover a
-strategy for detecting when the outage was over. The station interface
-`isconnected` method always returns `True` even if you explicitly disconnect.
-You can issue a `connect` statement but I could find no way to determine
-whether the attempt was successful.
-
-In my view the ESP32 running official MicroPython remains unsuitable for a
-resilient link.
-
-Contributions and suggestions are invited. Also any test results for the
-Loboris port.

@@ -27,8 +27,6 @@ from micropython import const
 WDT_CANCEL = const(-2)
 WDT_CB = const(-3)
 
-ESP32 = platform == 'esp32' or platform == 'esp32_LoBo'
-
 # Message ID generator. Only need one instance on client.
 getmid = gmid()
 gc.collect()
@@ -151,11 +149,6 @@ class Client:
         s = self._sta_if
         if s.isconnected():
             return
-        if ESP32:  # Is this still needed?
-            s.disconnect()
-            utime.sleep_ms(20)  # Hopefully no longer required
-            await asyncio.sleep(1)
-
         while True:  # For the duration of an outage
             s.connect(self._ssid, self._pw)
             if await self._got_wifi(s):
@@ -175,8 +168,6 @@ class Client:
     # Await a WiFi connection for 10 secs.
     async def _got_wifi(self, s):
         for _ in range(20):  # Wait t s for connect. If it fails assume an outage
-            if ESP32:  # Hopefully no longer needed
-                utime.sleep_ms(20)
             await asyncio.sleep_ms(500)
             self._feed(0)
             if s.isconnected():
