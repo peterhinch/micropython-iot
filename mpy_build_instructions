@@ -1,0 +1,16 @@
+Building the .mpy format
+
+In micropython directory check out V1.10 sources
+
+$ git checkout 3e25d611e
+$ cd mpy-cross
+$ make -j 8
+
+Cross compile client.py
+
+Then in micropython restore normal cross compiler
+
+$ git checkout master
+$ cd mpy-cross
+$ make -j 8
+

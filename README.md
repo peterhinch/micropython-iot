@@ -149,7 +149,8 @@ determine which physical client is associated with an incoming connection.
 # 3. Files and packages
 
  1. `client.py` / `client.mpy` Client module. The ESP8266 has insufficient RAM
- to compile `client.py` so the precompiled `client.mpy` should be used.
+ to compile `client.py` so the precompiled `client.mpy` should be used. See
+ note below.
  2. `__init__.py` Functions and classes common to many modules.
  3. `server.py` Server module. (runs under CPython 3.5+ or MicroPython 1.10+).
  4. `examples` Package of a simple example. Up to four clients communicate with
@@ -161,6 +162,10 @@ determine which physical client is associated with an incoming connection.
  7. `pb_link` Package enabling a Pyboard V1.x to communicate with the server via
  an ESP8266 connected by I2C. See [documentation](./pb_link/README.md).
  8. `esp_link` Package for the ESP8266 used in the Pyboard link.
+
+NOTE: The file `client.mpy` requires release build V1.10 of firmware. If using
+a later build, it is necessary to cross-compile with the associated version of
+`mpy-cross` as the mpy format has changed.
 
 ## 3.1 Installation
 
