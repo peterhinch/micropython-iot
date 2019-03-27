@@ -90,10 +90,9 @@ class Client:
         else:
             self._feed = lambda x: None
 
-            self._sta_if = network.WLAN(network.STA_IF)
-            ap = network.WLAN(network.AP_IF)  # create access-point interface
-            ap.active(False)  # deactivate the interface
-
+        self._sta_if = network.WLAN(network.STA_IF)
+        ap = network.WLAN(network.AP_IF)  # create access-point interface
+        ap.active(False)  # deactivate the interface
         self._sta_if.active(True)
         gc.collect()
 
