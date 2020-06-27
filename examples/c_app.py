@@ -1,7 +1,10 @@
 # c_app.py Client-side application demo
 
-# Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Released under the MIT licence. See LICENSE.
+# Copyright (C) Peter Hinch 2018-2020
+
+# Now uses and requires uasyncio V3. This is incorporated in daily builds
+# and release builds later than V1.12
 
 import gc
 import uasyncio as asyncio
@@ -17,25 +20,24 @@ if platform == 'pyboard':  # D series
 else:
     from machine import Pin
     led = Pin(2, Pin.OUT, value=1)  # Optional LED
-# End of optionalLED
+# End of optional LED
 
 from . import local
 gc.collect()
 
 
 class App(client.Client):
-    def __init__(self, loop, verbose):
+    def __init__(self, verbose):
         self.verbose = verbose
-        self.cl = client.Client(loop, local.MY_ID, local.SERVER, local.PORT, local.SSID, local.PW,
+        self.cl = client.Client(local.MY_ID, local.SERVER, local.PORT, local.SSID, local.PW,
                                 local.TIMEOUT, conn_cb=self.constate, verbose=verbose,
                                 led=led, wdog=False)
-        loop.create_task(self.start(loop))
 
-    async def start(self, loop):
+    async def start(self):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        loop.create_task(self.reader())
-        loop.create_task(self.writer())
+        asyncio.create_task(self.reader())
+        await self.writer()
 
     def constate(self, state):
         print("Connection state:", state)
@@ -69,10 +71,9 @@ class App(client.Client):
     def shutdown(self):
         self.cl.close()  # Shuts down WDT (but not on Pyboard D).
 
-
-loop = asyncio.get_event_loop()
-app = App(loop, verbose=True)
+app = App(verbose=True)
 try:
-    loop.run_forever()
+    asyncio.run(app.start())
 finally:
     app.shutdown()
+    asyncio.new_event_loop()

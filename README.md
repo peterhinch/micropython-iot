@@ -175,21 +175,14 @@ installation on that platform.
 
 #### Firmware/Dependency
 
-Firmware must be V1.10 or later; on ESP32 it must be more recent, specifically
-builds dated 25th March 2019 or later.
+This repo has been updated for `uasyncio` V3. This is incorporated in daily
+builds of firmware and will be available in release builds later than V1.12.
+Code run under CPython requires V3.8 or above. There have been API changes to
+accommodate this: the event loop argument is no longer required or accepted.
 
-On ESP8266 it is easiest to use the latest release build of firmware: such
-builds incorporate `uasyncio` as frozen bytecode. Daily builds do not.
-Alternatively to maximise free RAM, firmware can be built from source, freezing
-`uasyncio`, `client.py` and `__init__.py` as bytecode.
-
-Note that if `uasyncio` is to be installed it should be acquired from 
-[official micropython-lib](https://github.com/micropython/micropython-lib). It
-should not be installed from PyPi using `upip`: the version on PyPi is
-incompatible with official firmware.
-
-On ESP8266 it is necessary to
-[cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
+On ESP8266, RAM can be saved by building firmware from source, freezing
+`client.py` and `__init__.py` as bytecode. If this is not done, it is necessary
+to [cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
 `client.py`. The file `client.mpy` is provided for those unable to do this.
 
 #### Preconditions
@@ -365,17 +358,17 @@ import local  # or however you configure your project
 
 
 class App:
-    def __init__(self, loop, verbose):
-        self.cl = client.Client(loop, local.MY_ID, local.SERVER,
+    def __init__(self, verbose):
+        self.cl = client.Client(local.MY_ID, local.SERVER,
                                 local.PORT, local.SSID, local.PW,
                                 local.TIMEOUT, conn_cb=self.state, 
                                 verbose=verbose)
-        loop.create_task(self.start(loop))
+        asyncio.create_task(self.start())
 
-    async def start(self, loop):
+    async def start(self):
         await self.cl  # Wait until client has connected to server
-        loop.create_task(self.reader())
-        loop.create_task(self.writer())
+        asyncio.create_task(self.reader())
+        asyncio.create_task(self.writer())
 
     def state(self, state):  # Callback for change in connection status
         print("Connection state:", state)
@@ -399,12 +392,12 @@ class App:
     def close(self):
         self.cl.close()
 
-loop = asyncio.get_event_loop()
-app = App(loop, True)
+app = App(True)
 try:
     loop.run_forever()
 finally:
     app.close()  # Ensure proper shutdown e.g. on ctrl-C
+    asyncio.new_event_loop()
 ```
 If an outage of server or WiFi occurs, the `write` and `readline` methods will
 pause until connectivity has been restored. The server side API is similar.
@@ -417,24 +410,23 @@ The constructor has a substantial number of configuration options but in many
 cases defaults may be accepted for all but the first five.
 
 Constructor args:
- 1. `loop` The event loop.
- 2. `my_id` The client id.
- 3. `server` The server IP-Adress to connect to.
- 4. `port=8123` The port the server listens on.
- 5. `ssid=''` WiFi SSID. May be blank for ESP82666 with credentials in flash.
- 6. `pw=''` WiFi password. 
- 7. `timeout=2000` Connection timeout in ms. If a connection is unresponsive
+ 1. `my_id` The client id.
+ 2. `server` The server IP-Adress to connect to.
+ 3. `port=8123` The port the server listens on.
+ 4. `ssid=''` WiFi SSID. May be blank for ESP82666 with credentials in flash.
+ 5. `pw=''` WiFi password. 
+ 6. `timeout=2000` Connection timeout in ms. If a connection is unresponsive
  for longer than this period an outage is assumed.
- 8. `conn_cb=None` Callback or coroutine that is called whenever the connection
+ 7. `conn_cb=None` Callback or coroutine that is called whenever the connection
  changes.
- 9. `conn_cb_args=None` Arguments that will be passed to the *connected_cb*
+ 8. `conn_cb_args=None` Arguments that will be passed to the *connected_cb*
  callback. The callback will get these args preceeded by a `bool` indicating
  the new connection state.
- 10. `verbose=False` Provides optional debug output.
- 11. `led=None` If a `Pin` instance is passed it will be toggled each time a
+ 9. `verbose=False` Provides optional debug output.
+ 10. `led=None` If a `Pin` instance is passed it will be toggled each time a
  keepalive message is received. Can provide a heartbeat LED if connectivity is
  present. On Pyboard D a `Pin` or `LED` instance may be passed.
- 12. `wdog=False` If `True` a watchdog timer is created with a timeout of 20s.
+ 10. `wdog=False` If `True` a watchdog timer is created with a timeout of 20s.
  This will reboot the board if it crashes - the assumption is that the
  application will be restarted via `main.py`.
 
@@ -545,17 +537,17 @@ from micropython_iot import server
 import local  # or however you want to configure your project
 
 class App:
-    def __init__(self, loop, client_id):
+    def __init__(self, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Will be Connection instance
         self.data = [0, 0, 0]  # Exchange a 3-list with remote
-        loop.create_task(self.start(loop))
+        asyncio.create_task(self.start())
 
-    async def start(self, loop):
+    async def start(self):
         # await connection from the specific EP8266 client
         self.conn = await server.client_conn(self.client_id)
-        loop.create_task(self.reader())
-        loop.create_task(self.writer())
+        asyncio.create_task(self.reader())
+        asyncio.create_task(self.writer())
 
     async def reader(self):
         while True:
@@ -574,17 +566,16 @@ class App:
             await self.conn.write(json.dumps(self.data))  # May pause in event of outage
             await asyncio.sleep(5)
 
-
 def run():
-    loop = asyncio.get_event_loop()
     clients = {1, 2, 3, 4}
-    apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
+    apps = [App(n) for n in clients]  # Accept 4 clients with ID's 1-4
     try:
-        loop.run_until_complete(server.run(loop, clients, False, local.PORT, local.TIMEOUT))
-    except KeyboardInterrupt:
+        asyncio.run(server.run(clients, False, local.PORT, local.TIMEOUT))
+    except KeyboardInterrupt:  # Skip this if you want a traceback
         print('Interrupted')
     finally:
         server.Connection.close_all()
+        asyncio.new_event_loop()
 
 if __name__ == "__main__":
     run()
@@ -594,11 +585,10 @@ if __name__ == "__main__":
 
 Server-side applications should create and run a `server.run` task. This runs
 forever and takes the following args:
- 1. `loop` The event loop.
- 2. `expected` A set of expected client ID strings.
- 3. `verbose=False` If `True` output diagnostic messages.
- 4. `port=8123` TCP/IP port for connection. Must match clients.
- 5. `timeout=2000` Timeout for outage detection in ms. Must match the timeout
+ 1. `expected` A set of expected client ID strings.
+ 2. `verbose=False` If `True` output diagnostic messages.
+ 3. `port=8123` TCP/IP port for connection. Must match clients.
+ 4. `timeout=2000` Timeout for outage detection in ms. Must match the timeout
  of all `Client` instances.
 
 The `expected` arg causes the server to produce a warning message if an
@@ -651,9 +641,8 @@ which spends most of its time waiting for incoming data.
 
 Server module coroutines:
 
- 1. `run` Args: `loop` `expected` `verbose=False` `port=8123` `timeout=2000`
+ 1. `run` Args: `expected` `verbose=False` `port=8123` `timeout=2000`
  This is the main coro and starts the system. 
- `loop` is the event loop.  
  `expected` is a set containing the ID's of all clients.  
  `verbose` causes debug messages to be printed.  
  `port` is the port to listen to.  
@@ -756,8 +745,7 @@ This default can be changed with the `wait` argument to `write`. If `False` a
 `qos` message will be sent immediately, even if acknowledge packets from
 previous messages are pending. Applications should be designed to limit the
 number of such `qos` messages sent in quick succession: on ESP8266 clients
-buffer overflows can occur. Demands on `uasyncio` are increased: it may be
-necessary to amend the default queue sizes in `get_event_loop`.
+buffer overflows can occur.
 
 The ESP32 is not resilient under these circumstances. Setting `wait=False` is
 not recommended. If used, applications should be tested to verify resilience in
@@ -819,7 +807,7 @@ interface; for example the Pyboard V1.x. Connectivity is provided by an ESP8266
 running a fixed firmware build: this needs no user code.
 
 The interface between the Pyboard and the ESP8266 uses I2C and is based on the
-[existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/i2c).
+[existing I2C module](https://github.com/peterhinch/micropython-async/tree/master/v3/as_drivers/i2c).
 
 ![Image](./images/block_diagram_pyboard.png)
 

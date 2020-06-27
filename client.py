@@ -1,7 +1,10 @@
 # client.py Client class for resilient asynchronous IOT communication link.
 
 # Released under the MIT licence.
-# Copyright (C) Peter Hinch, Kevin Köck 2019
+# Copyright (C) Peter Hinch, Kevin Köck 2019-2020
+
+# Now uses and requires uasyncio V3. This is incorporated in daily builds
+# and release builds later than V1.12
 
 # After sending ID now pauses before sending further data to allow server to
 # initiate read task.
@@ -19,7 +22,9 @@ import network
 import utime
 import machine
 import errno
-from . import gmid, isnew, launch, Event, Lock, SetByte  # __init__.py
+from . import gmid, isnew, launch, SetByte  # __init__.py
+Event = asyncio.Event
+Lock = asyncio.Lock
 
 gc.collect()
 from micropython import const
@@ -33,11 +38,10 @@ gc.collect()
 
 
 class Client:
-    def __init__(self, loop, my_id, server, port=8123,
+    def __init__(self, my_id, server, port=8123,
                  ssid='', pw='', timeout=2000,
                  conn_cb=None, conn_cb_args=None,
                  verbose=False, led=None, wdog=False):
-        self._loop = loop
         self._my_id = '{}{}'.format(my_id, '\n')  # Ensure >= 1 newline
         self._server = server
         self._ssid = ssid
@@ -95,8 +99,11 @@ class Client:
         ap.active(False)  # deactivate the interface
         self._sta_if.active(True)
         gc.collect()
+        if platform == 'esp8266':
+            import esp
+            esp.sleep_type(esp.SLEEP_NONE)  # Improve connection integrity at cost of power consumption.
 
-        self._evfail = Event(100)  # 100ms pause
+        self._evfail = Event()
         self._s_lock = Lock()  # For internal send conflict.
         self._last_wr = utime.ticks_ms()
         self._lineq = deque((), 20, True)  # 20 entries, throw on overflow
@@ -105,12 +112,12 @@ class Client:
         self._ok = False  # Set after 1st successful read
         self._acks_pend = SetByte()  # ACKs which are expected to be received
         gc.collect()
-        loop.create_task(self._run(loop))
+        asyncio.create_task(self._run())
 
     # **** API ****
     def __iter__(self):  # Await a connection
         while not self():
-            yield from asyncio.sleep_ms(self._tim_short)
+            yield from asyncio.sleep_ms(self._tim_short)  # V3 note: this syntax works.
 
     def status(self):
         return self._ok
@@ -219,7 +226,7 @@ class Client:
         await asyncio.sleep(3)
         self._feed(0)
 
-    async def _run(self, loop):
+    async def _run(self):
         # ESP8266 stores last good connection. Initially give it time to re-establish
         # that link. On fail, .bad_wifi() allows for user recovery.
         await asyncio.sleep(1)  # Didn't always start after power up
@@ -241,7 +248,6 @@ class Client:
             self._verbose and print('WiFi OK')
             self._sock = socket.socket()
             self._evfail.clear()
-            _reader = self._reader()
             try:
                 serv = socket.getaddrinfo(self._server, self._port)[0][-1]  # server read
                 # If server is down OSError e.args[0] = 111 ECONNREFUSED
@@ -254,7 +260,7 @@ class Client:
                 self._sock.setblocking(False)
                 # Start reading before server can send: can't send until it
                 # gets ID.
-                loop.create_task(_reader)
+                tsk_reader = asyncio.create_task(self._reader())
                 # Server reads ID immediately, but a brief pause is probably wise.
                 await asyncio.sleep_ms(50)
                 # No need for lock yet.
@@ -265,16 +271,14 @@ class Client:
                     if init:
                         await self.bad_server()
                 else:
-                    _keepalive = self._keepalive()
-                    loop.create_task(_keepalive)
+                    tsk_ka = asyncio.create_task(self._keepalive())
                     if self._concb is not None:
                         # apps might need to know connection to the server acquired
                         launch(self._concb, True, *self._concbargs)
-                    await self._evfail  # Pause until something goes wrong
-                    self._verbose and print(self._evfail.value())
+                    await self._evfail.wait()  # Pause until something goes wrong
                     self._ok = False
-                    asyncio.cancel(_reader)
-                    asyncio.cancel(_keepalive)
+                    tsk_reader.cancel()
+                    tsk_ka.cancel()
                     await asyncio.sleep_ms(0)  # wait for cancellation
                     self._feed(0)  # _concb might block (I hope not)
                     if self._concb is not None:
@@ -296,7 +300,8 @@ class Client:
             try:
                 line = await self._readline(to)  # OSError on fail
             except OSError:
-                self._evfail.set('reader fail')  # ._run cancels other coros
+                self._verbose and print('reader fail')
+                self._evfail.set()  # ._run cancels other coros
                 return
 
             to = self._to
@@ -305,7 +310,7 @@ class Client:
                 self._acks_pend.discard(mid)  # qos0 acks are ignored
                 continue  # All done
             # Message received & can be passed to user: send ack.
-            self._loop.create_task(self._sendack(mid))
+            asyncio.create_task(self._sendack(mid))
             # Discard dupes. mid == 0 : Server has power cycled
             if not mid:
                 isnew(-1)  # Clear down rx message record
@@ -313,7 +318,8 @@ class Client:
                 try:
                     self._lineq.append(line[2:].decode())
                 except IndexError:
-                    self._evfail.set('_reader fail. Overflow.')
+                    self._verbose and print('_reader fail. Overflow.')
+                    self._evfail.set()
                     return
             if c == self.connects:
                 self.connects += 1  # update connect count
@@ -355,7 +361,7 @@ class Client:
             try:
                 d = self._sock.readline()
             except Exception as e:
-                self._verbose and print('_readline exception')
+                self._verbose and print('_readline exception', d)
                 raise
             if d == b'':
                 self._verbose and print('_readline peer disconnect')
@@ -379,14 +385,16 @@ class Client:
                 if err == errno.EAGAIN:  # Would block: await server read
                     await asyncio.sleep_ms(100)
                 else:
-                    self._evfail.set('_send fail. Disconnect')
+                    self._verbose and print('_send fail. Disconnect')
+                    self._evfail.set()
                     return False  # peer disconnect
             else:
                 d = d[ns:]
                 if d:  # Partial write: pause
                     await asyncio.sleep_ms(20)
                 if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
-                    self._evfail.set('_send fail. Timeout.')
+                    self._verbose and print('_send fail. Timeout.')
+                    self._evfail.set()
                     return False
 
         self._last_wr = utime.ticks_ms()

@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 # s_app_cp.py Server-side application demo
-# Run under CPython 3.5 or later.
+# Run under CPython 3.8 or later or MicroPython Unix build.
+# Under MicroPython uses and requires uasyncio V3.
 
-# Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Released under the MIT licence. See LICENSE.
+# Copyright (C) Peter Hinch 2018-2020
 
 # The App class emulates a user application intended to service a single
 # client.
@@ -23,7 +24,7 @@ from .local import PORT, TIMEOUT
 
 
 class App:
-    def __init__(self, loop, client_id):
+    def __init__(self, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
         self.tx_msg_id = 0
@@ -31,13 +32,13 @@ class App:
         self.rxbuf = []
         self.missing = 0
         self.last = 0
-        loop.create_task(self.start(loop))
+        asyncio.create_task(self.start())
 
-    async def start(self, loop):
+    async def start(self):
         print('Client {} Awaiting connection.'.format(self.client_id))
         self.conn = await server.client_conn(self.client_id)
-        loop.create_task(self.reader())
-        loop.create_task(self.writer())
+        asyncio.create_task(self.reader())
+        asyncio.create_task(self.writer())
 
     def count_missed(self):
         if len(self.rxbuf) >= 25:
@@ -75,17 +76,19 @@ class App:
             await self.conn.write(json.dumps(data))
             await asyncio.sleep(5)
 
+async def main():
+    app = App('qos')
+    await server.run({'qos'}, True, port=PORT, timeout=TIMEOUT)
 
 def run():
-    loop = asyncio.get_event_loop()
-    app = App(loop, 'qos')
     try:
-        loop.run_until_complete(server.run(loop, {'qos'}, True, port=PORT, timeout=TIMEOUT))
+        asyncio.run(main())
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
         print('Closing sockets')
         server.Connection.close_all()
+        asyncio.new_event_loop()
 
 
 if __name__ == "__main__":

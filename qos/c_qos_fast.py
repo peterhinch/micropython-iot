@@ -1,8 +1,11 @@
 # c_qos_fast.py Client-side application demo for Quality of Service
 # Tests rapid send and receive of qos messages
 
-# Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Released under the MIT licence. See LICENSE.
+# Copyright (C) Peter Hinch 2018-2020
+
+# Now uses and requires uasyncio V3. This is incorporated in daily builds
+# and release builds later than V1.12
 
 import gc
 import uasyncio as asyncio
@@ -25,9 +28,9 @@ else:
 # End of optionalLED
 
 class App:
-    def __init__(self, loop, verbose):
+    def __init__(self, verbose):
         self.verbose = verbose
-        self.cl = client.Client(loop, local.MY_ID, local.SERVER,
+        self.cl = client.Client(local.MY_ID, local.SERVER,
                                 local.PORT, local.SSID, local.PW,
                                 local.TIMEOUT, verbose=verbose, led=led)
         self.tx_msg_id = 0
@@ -35,13 +38,12 @@ class App:
         self.missing = 0
         self.last = 0
         self.rxbuf = []
-        loop.create_task(self.start(loop))
 
-    async def start(self, loop):
+    async def start(self):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        loop.create_task(self.reader())
-        loop.create_task(self.writer(loop))
+        asyncio.create_task(self.reader())
+        await self.writer()
 
     async def reader(self):
         self.verbose and print('Started reader')
@@ -66,7 +68,7 @@ class App:
         return self.missing
 
     # Send [ID, (re)connect count, free RAM, duplicate message count, missed msgcount]
-    async def writer(self, loop):
+    async def writer(self):
         self.verbose and print('Started writer')
         while True:
             for _ in range(4):
@@ -77,16 +79,16 @@ class App:
                 await self.cl  # Only launch write if link is up
                 print('Sent', data, 'to server app\n')
                 dstr = ujson.dumps(data)
-                loop.create_task(self.cl.write(dstr, wait=False))
+                asyncio.create_task(self.cl.write(dstr, wait=False))
             await asyncio.sleep(5)
 
     def close(self):
         self.cl.close()
 
 
-loop = asyncio.get_event_loop(runq_len=40, waitq_len=40)
-app = App(loop, True)
+app = App(True)
 try:
-    loop.run_forever()
+    asyncio.run(app.start())
 finally:
     app.close()
+    asyncio.new_event_loop()

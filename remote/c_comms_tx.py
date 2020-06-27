@@ -1,7 +1,7 @@
 # c_comms_tx.py Client-side app demo. Sends switch state to "rx" device.
 
-# Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Released under the MIT licence. See LICENSE.
+# Copyright (C) Peter Hinch 2018-2020
 
 # Outage handling: switch chnages during the outage are ignored. When the
 # outage ends, the switch state at that time is transmitted.
@@ -25,12 +25,12 @@ gc.collect()
 class Switch:
     debounce_ms = 50
 
-    def __init__(self, loop, pin):
+    def __init__(self, pin):
         self.pin = pin  # Should be initialised for input with pullup
         self._open_func = False
         self._close_func = False
         self.switchstate = self.pin.value()  # Get initial state
-        loop.create_task(self.switchcheck())  # Thread runs forever
+        asyncio.create_task(self.switchcheck())  # Thread runs forever
 
     def open_func(self, func):
         self._open_func = func
@@ -57,20 +57,19 @@ class Switch:
 
 
 class App:
-    def __init__(self, loop, verbose):
+    def __init__(self, verbose):
         self.verbose = verbose
         led = Pin(2, Pin.OUT, value=1)  # Optional LED
         # Pushbutton on Cockle board from shrimping.it
-        self.switch = Switch(loop, Pin(0, Pin.IN))
+        self.switch = Switch(Pin(0, Pin.IN))
         self.switch.close_func(lambda: self.must_send.set())
         self.switch.open_func(lambda: self.must_send.set())
         self.must_send = Event()
-        self.cl = client.Client(loop, 'tx', local.SERVER, local.PORT,
+        self.cl = client.Client('tx', local.SERVER, local.PORT,
                                 local.SSID, local.PW, timeout=local.TIMEOUT,
                                 verbose=verbose, led=led)
-        loop.create_task(self.start(loop))
 
-    async def start(self, loop):
+    async def start(self):
         self.verbose and print('App awaiting connection.')
         await self.cl
         self.verbose and print('Got connection')
@@ -83,9 +82,9 @@ class App:
         self.cl.close()
 
 
-loop = asyncio.get_event_loop()
-app = App(loop, True)
+app = App(True)
 try:
-    loop.run_forever()
+    asyncio.run(app.start())
 finally:
     app.close()
+    asyncio.new_event_loop()

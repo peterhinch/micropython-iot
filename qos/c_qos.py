@@ -1,7 +1,10 @@
 # c_qos.py Client-side application demo for Quality of Service
 
-# Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Released under the MIT licence. See LICENSE.
+# Copyright (C) Peter Hinch 2018-2020
+
+# Now uses and requires uasyncio V3. This is incorporated in daily builds
+# and release builds later than V1.12
 
 import gc
 import uasyncio as asyncio
@@ -14,12 +17,20 @@ gc.collect()
 from micropython_iot import client
 import urandom
 
+# Optional LED. led=None if not required
+from sys import platform
+if platform == 'pyboard':  # D series
+    from pyb import LED
+    led = LED(1)
+else:
+    from machine import Pin
+    led = Pin(2, Pin.OUT, value=1)  # Optional LED
+# End of optionalLED
 
 class App:
-    def __init__(self, loop, verbose):
+    def __init__(self, verbose):
         self.verbose = verbose
-        led = Pin(2, Pin.OUT, value=1)  # Optional LED
-        self.cl = client.Client(loop, local.MY_ID, local.SERVER,
+        self.cl = client.Client(local.MY_ID, local.SERVER,
                                 local.PORT, local.SSID, local.PW,
                                 local.TIMEOUT, verbose=verbose, led=led)
         self.tx_msg_id = 0
@@ -27,14 +38,13 @@ class App:
         self.missing = 0
         self.last = 0
         self.rxbuf = []
-        loop.create_task(self.start(loop))
 
-    async def start(self, loop):
+    async def start(self):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        loop.create_task(self.reader())
         for _ in range(3):
-            loop.create_task(self.writer())
+            asyncio.create_task(self.writer())
+        await self.reader()
 
     async def reader(self):
         self.verbose and print('Started reader')
@@ -75,9 +85,9 @@ class App:
         self.cl.close()
 
 
-loop = asyncio.get_event_loop()
-app = App(loop, True)
+app = App(True)
 try:
-    loop.run_forever()
+    asyncio.run(app.start())
 finally:
     app.close()
+    asyncio.new_event_loop()

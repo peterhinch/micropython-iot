@@ -1,7 +1,7 @@
 # c_comms_rx.py Client-side application demo reads data sent by another client
 
-# Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Released under the MIT licence. See LICENSE.
+# Copyright (C) Peter Hinch 2018-2020
 
 import gc
 import uasyncio as asyncio
@@ -15,18 +15,17 @@ from micropython_iot import client
 
 
 class App:
-    def __init__(self, loop, verbose):
+    def __init__(self, verbose):
         self.verbose = verbose
         self.led = Pin(2, Pin.OUT, value=1)  # LED for received data
-        self.cl = client.Client(loop, 'rx', local.SERVER, local.PORT,
+        self.cl = client.Client('rx', local.SERVER, local.PORT,
                                 local.SSID, local.PW, local.TIMEOUT,
                                 verbose=verbose)
-        loop.create_task(self.start(loop))
 
-    async def start(self, loop):
+    async def start(self):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        loop.create_task(self.reader())
+        asyncio.create_task(self.reader())
 
     async def reader(self):
         self.verbose and print('Started reader')
@@ -40,9 +39,9 @@ class App:
         self.cl.close()
 
 
-loop = asyncio.get_event_loop()
-app = App(loop, True)
+app = App(True)
 try:
-    loop.run_forever()
+    asyncio.run(app.start())
 finally:
     app.close()
+    asyncio.new_event_loop()

@@ -3,20 +3,15 @@
 
 # s_comms_cp.py Server-side application demo. Accepts data from one client and
 # sends it to another
-# Run under CPython 3.5 or later.
+# Run under CPython 3.8 or later.
 
-# Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Released under the MIT licence. See LICENSE.
+# Copyright (C) Peter Hinch 2018-2020
 
-import sys
-
-upython = sys.implementation.name == 'micropython'
-
-if upython:
+try:
     import uasyncio as asyncio
     import ujson as json
-    from micropython_iot import Event
-else:
+except ImportError:  #CPython
     import asyncio
     import json
 
@@ -27,17 +22,14 @@ from .local import PORT, TIMEOUT
 
 class App:
     data = None
-    if upython:
-        trig_send = Event()
-    else:
-        trig_send = asyncio.Event()
+    trig_send = asyncio.Event()
 
-    def __init__(self, loop, client_id):
+    def __init__(self, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
-        loop.create_task(self.start(loop))
+        asyncio.create_task(self.start())
 
-    async def start(self, loop):
+    async def start(self):
         my_id = self.client_id
         print('Client {} Awaiting connection.'.format(my_id))
         # Wait for all clients to connect
@@ -45,9 +37,9 @@ class App:
         print('Message from {}: all peers are connected.'.format(my_id))
 
         if my_id == 'tx':  # Client is sending
-            loop.create_task(self.reader())
+            asyncio.create_task(self.reader())
         else:
-            loop.create_task(self.writer())
+            asyncio.create_task(self.writer())
 
     async def reader(self):
         print('Started reader')
@@ -70,15 +62,15 @@ class App:
 
 def run():
     clients = {'rx', 'tx'}  # Expected clients
-    loop = asyncio.get_event_loop()
-    apps = [App(loop, name) for name in clients]  # Accept 2 clients
+    apps = [App(name) for name in clients]  # Accept 2 clients
     try:
-        loop.run_until_complete(server.run(loop, clients, False, port=PORT, timeout=TIMEOUT))
+        asyncio.run(server.run(clients, False, port=PORT, timeout=TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
         print('Closing sockets')
         server.Connection.close_all()
+        asyncio.new_event_loop()
 
 
 if __name__ == "__main__":

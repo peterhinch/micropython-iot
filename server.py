@@ -10,7 +10,10 @@
 # This server and the server applications are assumed to reside on a device
 # with a wired interface on the local network.
 
-# Run under CPython 3.5+ or MicroPython Unix build
+# Now uses and requires uasyncio V3. This is incorporated in daily builds
+# and release builds later than V1.12
+# Under CPython requires CPython 3.8 or later.
+
 import sys
 from . import gmid, isnew  # __init__.py
 
@@ -21,14 +24,14 @@ if upython:
     import utime as time
     import uselect as select
     import uerrno as errno
-    from . import Lock
 else:
     import socket
     import asyncio
     import time
     import select
     import errno
-    Lock = asyncio.Lock
+
+Lock = asyncio.Lock
 
 TIM_TINY = 0.05  # Short delay avoids 100% CPU utilisation in busy-wait loops
 
@@ -66,7 +69,7 @@ async def _readid(s, to_secs):
 # Allow 2 extra connections. This is to cater for error conditions like
 # duplicate or unexpected clients. Accept the connection and have the
 # Connection class produce a meaningful error message.
-async def run(loop, expected, verbose=False, port=8123, timeout=2000):
+async def run(expected, verbose=False, port=8123, timeout=2000):
     addr = socket.getaddrinfo('0.0.0.0', port, 0, socket.SOCK_STREAM)[0][-1]
     s_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # server socket
     s_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -86,7 +89,7 @@ async def run(loop, expected, verbose=False, port=8123, timeout=2000):
             except OSError:
                 c_sock.close()
             else:
-                Connection.go(loop, to_secs, data, verbose, c_sock, s_sock,
+                Connection.go(to_secs, data, verbose, c_sock, s_sock,
                               expected)
         await asyncio.sleep(0.2)
 
@@ -100,7 +103,7 @@ class Connection:
     _server_sock = None
 
     @classmethod
-    def go(cls, loop, to_secs, data, verbose, c_sock, s_sock, expected):
+    def go(cls, to_secs, data, verbose, c_sock, s_sock, expected):
         client_id, init_str = data.split('\n', 1)
         verbose and print('Got connection from client', client_id)
         if cls._server_sock is None:  # 1st invocation
@@ -113,7 +116,7 @@ class Connection:
             else:  # Reconnect after failure
                 cls._conns[client_id]._reconnect(c_sock)
         else: # New client: instantiate Connection
-            Connection(loop, to_secs, c_sock, client_id, init_str, verbose)
+            Connection(to_secs, c_sock, client_id, init_str, verbose)
 
     # Server-side app waits for a working connection
     @classmethod
@@ -148,8 +151,7 @@ class Connection:
         if cls._server_sock is not None:
             cls._server_sock.close()
 
-    def __init__(self, loop, to_secs, c_sock, client_id, init_str, verbose):
-        self._loop = loop
+    def __init__(self, to_secs, c_sock, client_id, init_str, verbose):
         self._to_secs = to_secs
         self._tim_short = self._to_secs / 10
         self._tim_ka = self._to_secs / 4  # Keepalive interval
@@ -173,8 +175,8 @@ class Connection:
         self._wlock = Lock()  # Write lock
         self._lines = []  # Buffer of received lines
         self._acks_pend = set()  # ACKs which are expected to be received
-        loop.create_task(self._read(init_str))
-        loop.create_task(self._keepalive())
+        asyncio.create_task(self._read(init_str))
+        asyncio.create_task(self._keepalive())
 
     def _reconnect(self, c_sock):
         self._sock = c_sock
@@ -194,7 +196,7 @@ class Connection:
     def __await__(self):
         if upython:
             while not self():
-                yield int(self._tim_short * 1000)
+                yield from asyncio.sleep_ms(self._tim_short * 1000)
         else: 
             # CPython: Meet requirement for generator in __await__
             # https://github.com/python/asyncio/issues/451
@@ -258,7 +260,7 @@ class Connection:
                     start = time.time()  # Something was received
                     if self._await_client:  # 1st item after (re)start
                         self._await_client = False  # Enable write after delay
-                        self._loop.create_task(self._client_active())
+                        asyncio.create_task(self._client_active())
                     if d == b'':  # Reset by peer
                         self._close('_read reset by peer')
                         continue
@@ -282,7 +284,7 @@ class Connection:
         if lines:
             self._lines.extend(lines)
             for line in lines:
-                self._loop.create_task(self._sendack(int(line[0:2], 16)))
+                asyncio.create_task(self._sendack(int(line[0:2], 16)))
 
     async def _sendack(self, mid):
         async with self._wlock:
