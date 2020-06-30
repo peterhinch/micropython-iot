@@ -71,9 +71,14 @@ class App(client.Client):
     def shutdown(self):
         self.cl.close()  # Shuts down WDT (but not on Pyboard D).
 
-app = App(verbose=True)
+app = None
+async def main():
+    global app  # For finally clause
+    app = App(verbose=True)
+    await app.start()
+
 try:
-    asyncio.run(app.start())
+    asyncio.run(main())
 finally:
     app.shutdown()
     asyncio.new_event_loop()

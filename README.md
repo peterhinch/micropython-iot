@@ -213,7 +213,7 @@ its associated RAM saving.
 This repository is a python package, consequently on the client the directory
 structure must be retained. The following installs all demos on the target.
 
-Clone the repository after moving to a directory of your choice:
+On your PC move to a directory of your choice and clone the repository there:
 ```
 git clone https://github.com/peterhinch/micropython-iot
 ```
@@ -381,7 +381,7 @@ class App:
     async def start(self):
         await self.cl  # Wait until client has connected to server
         asyncio.create_task(self.reader())
-        asyncio.create_task(self.writer())
+        await self.writer()  # Wait forever
 
     def state(self, state):  # Callback for change in connection status
         print("Connection state:", state)
@@ -405,9 +405,14 @@ class App:
     def close(self):
         self.cl.close()
 
-app = App(True)
+app = None
+async def main():
+    global app  # For closure by finally clause
+    app = App(True)
+    await app.start()  # Wait forever
+
 try:
-    loop.run_forever()
+    asyncio.run(main())
 finally:
     app.close()  # Ensure proper shutdown e.g. on ctrl-C
     asyncio.new_event_loop()
@@ -489,7 +494,7 @@ awaiting incoming data.
 
 When an application instantiates a `Client` it attemps to connect to WiFi and
 then to the server. Initial connection is handled by the following `Client`
-asynchronous bound methods:
+asynchronous bound methods (which may be modified by subclassing):
 
  1. `bad_wifi` No args.
  2. `bad_server` No args. Awaited if server refuses an initial connection.
@@ -579,12 +584,15 @@ class App:
             await self.conn.write(json.dumps(self.data))  # May pause in event of outage
             await asyncio.sleep(5)
 
-def run():
+async def main():
     clients = {1, 2, 3, 4}
     apps = [App(n) for n in clients]  # Accept 4 clients with ID's 1-4
+    await server.run(clients, True, local.PORT, local.TIMEOUT)  # Verbose
+
+def run():
     try:
-        asyncio.run(server.run(clients, False, local.PORT, local.TIMEOUT))
-    except KeyboardInterrupt:  # Skip this if you want a traceback
+        asyncio.run(main())
+    except KeyboardInterrupt:  # Delete this if you want a traceback
         print('Interrupted')
     finally:
         server.Connection.close_all()

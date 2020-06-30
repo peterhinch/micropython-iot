@@ -85,9 +85,14 @@ class App:
         self.cl.close()
 
 
-app = App(True)
+app = None
+async def main():
+    global app  # For finally clause
+    app = App(verbose=True)
+    await app.start()
+
 try:
-    asyncio.run(app.start())
+    asyncio.run(main())
 finally:
     app.close()
     asyncio.new_event_loop()

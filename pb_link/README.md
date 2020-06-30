@@ -1,3 +1,5 @@
+# WARNING: This doc is out of date and under review
+
 # 0. IOT design for clients lacking a LAN interface
 
 This uses an ESP8266 to provide a resilient "socket-like" link between a non
