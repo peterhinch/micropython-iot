@@ -1,5 +1,4 @@
-# c_qos_fast.py Client-side application demo for Quality of Service
-# Tests rapid send and receive of qos messages
+# c_qos.py Client-side application demo for Quality of Service
 
 # Released under the MIT licence. See LICENSE.
 # Copyright (C) Peter Hinch 2018-2020
@@ -15,7 +14,8 @@ import ujson
 from machine import Pin
 from . import local
 gc.collect()
-from micropython_iot import client
+from iot import client
+import urandom
 
 # Optional LED. led=None if not required
 from sys import platform
@@ -42,8 +42,9 @@ class App:
     async def start(self):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        asyncio.create_task(self.reader())
-        await self.writer()
+        for _ in range(3):
+            asyncio.create_task(self.writer())
+        await self.reader()
 
     async def reader(self):
         self.verbose and print('Started reader')
@@ -71,16 +72,14 @@ class App:
     async def writer(self):
         self.verbose and print('Started writer')
         while True:
-            for _ in range(4):
-                gc.collect()
-                data = [self.tx_msg_id, self.cl.connects, gc.mem_free(),
-                        self.dupes, self.count_missed()]
-                self.tx_msg_id += 1
-                await self.cl  # Only launch write if link is up
-                print('Sent', data, 'to server app\n')
-                dstr = ujson.dumps(data)
-                asyncio.create_task(self.cl.write(dstr, wait=False))
-            await asyncio.sleep(5)
+            gc.collect()
+            data = [self.tx_msg_id, self.cl.connects, gc.mem_free(),
+                    self.dupes, self.count_missed()]
+            self.tx_msg_id += 1
+            print('Sent', data, 'to server app\n')
+            dstr = ujson.dumps(data)
+            await self.cl.write(dstr)  # Wait out any outage
+            await asyncio.sleep_ms(7000 + urandom.getrandbits(10))
 
     def close(self):
         self.cl.close()

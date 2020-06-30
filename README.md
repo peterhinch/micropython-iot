@@ -1,3 +1,5 @@
+Notes on Unix version.
+
 # Introduction
 
 This library provides a resilient full duplex communication link between a WiFi
@@ -7,8 +9,8 @@ can run for indefinite periods. Temporary WiFi or server outages are tolerated
 without message loss.
 
 The API is simple and consistent between client and server applications,
-comprising `write` and `readline` methods. Guaranteed message delivery is
-available.
+comprising `write` and `readline` methods. The `ujson` library enables various
+Python objects to be exchanged. Guaranteed message delivery is available.
 
 This project is a collaboration between Peter Hinch and Kevin Köck.
 
@@ -22,8 +24,7 @@ reliability is therefore paramount. Security is also a factor for endpoints
 exposed to the internet.
 
 Under MicroPython the available hardware for endpoints is limited. Testing has
-been done on the ESP8266, ESP32 and the Pyboard D. The ESP32 must run firmware
-dated on or after 25th March 2019.
+been done on the ESP8266, ESP32 and the Pyboard D.
 
 The ESP8266 remains as a readily available inexpensive device which, with care,
 is capable of long term reliable operation. It does suffer from limited
@@ -65,7 +66,7 @@ Benefits are:
  run a resilient internet protocol such as [this MQTT version](https://github.com/peterhinch/micropython-mqtt.git).
  5. The server side application runs on a relatively powerful machine. Even
  minimal hardware such as a Raspberry Pi has the horsepower easily to support
- TLS and to maintain concurrent links to  multiple client nodes. Use of
+ TLS and to maintain concurrent links to multiple client nodes. Use of
  threading is feasible.
  6. The option to use CPython on the server side enables access to the full
  suite of Python libraries including internet modules.
@@ -132,7 +133,9 @@ discussed in [section 8](./README.md#8-performance).
 
 Client and server applications use `readline` and `write` methods to
 communicate: in the case of an outage of WiFi or the connected endpoint, the
-method will pause until the outage ends.
+method will pause until the outage ends. While the system is tolerant of
+runtime server and WiFi outages, this does not apply on initialisation. The
+server must accessible before clients are started.
 
 The link status is determined by periodic exchanges of keepalive messages. This
 is transparent to the application. If a keepalive is not received within a user
@@ -148,57 +151,107 @@ determine which physical client is associated with an incoming connection.
 
 # 3. Files and packages
 
+This repo has been updated for `uasyncio` V3. This is incorporated in daily
+builds of firmware and will be available in release builds later than V1.12.
+Server code may be run under CPython V3.8 or above. It may be run under
+MicroPython (Unix build), but at the time of writing this requires
+[this fix](https://github.com/micropython/micropython/issues/6109#issuecomment-639376529)
+to incorporate `uasyncio`.
+
+Directory `iot`:
  1. `client.py` / `client.mpy` Client module. The ESP8266 has insufficient RAM
  to compile `client.py` so the precompiled `client.mpy` should be used. See
  note below.
- 2. `__init__.py` Functions and classes common to many modules.
- 3. `server.py` Server module. (runs under CPython 3.5+ or MicroPython 1.10+).
- 4. `examples` Package of a simple example. Up to four clients communicate with
- a single server instance.
- 5. `remote` Package demonstrating using the library to enable one client to
- control another.
- 6. `qos` Package demonstrating the qos (qality of service) implementation, see
+ 2. `server.py` Server module. (runs under CPython 3.5+ or MicroPython 1.10+).
+Directory `iot/primitives`:
+ 1. `__init__.py` Functions common to `Client` and `Server`.
+ 2. `switch.py` Debounced switch interface. Used by `remote` demo.
+Optional directories containing Python packages:
+ 1. `iot/examples` A simple example. Up to four clients communicate with a
+ single server instance.
+ 2. `iot/remote` Demo uses the library to enable one client to control another.
+ This may need adapting for your hardware.
+ 3. `iot/qos` Demonstrates and tests the qos (quality of service) feature, see
  [Quality of service](./README.md#7-quality-of-service).
- 7. `pb_link` Package enabling a Pyboard V1.x to communicate with the server via
- an ESP8266 connected by I2C. See [documentation](./pb_link/README.md).
- 8. `esp_link` Package for the ESP8266 used in the Pyboard link.
+ 4. `iot/pb1` Contians packages enabling a Pyboard V1.x to communicate with the
+ server via an ESP8266 connected by I2C. See [documentation](./pb_link/README.md).
 
-NOTE: The file `client.mpy` requires release build V1.10 of firmware. If using
-a later build, it is necessary to cross-compile with the associated version of
-`mpy-cross` as the mpy format has changed.
+NOTE: The file `client.mpy` works with daily builds at the time of writing. The
+bytecode format changes occasionally. If an application throws a bytecode error
+it is necessary to cross-compile `client.py` with the associated version of
+`mpy-cross`. Or raise an issue and I will post an update.
 
 ## 3.1 Installation
 
 This section describes the installation of the library and the demos. The
-ESP8266 has limited RAM: there are a number of specific recommendations for
-installation on that platform.
+ESP8266 has limited RAM: there are specific recommendations for installation on
+that platform.
+
+#### Existing users
+
+It is recommended to remove the old version and re-install as below.
+
+There have been API changes to accommodate the new `uasyncio` version: the
+event loop argument is no longer required or accepted in `Client` and `Server`
+constructors. The directory structure has changed, requiring minor changes to
+`import` statements.
 
 #### Firmware/Dependency
 
-This repo has been updated for `uasyncio` V3. This is incorporated in daily
-builds of firmware and will be available in release builds later than V1.12.
-Code run under CPython requires V3.8 or above. There have been API changes to
-accommodate this: the event loop argument is no longer required or accepted.
-
 On ESP8266, RAM can be saved by building firmware from source, freezing
-`client.py` and `__init__.py` as bytecode. If this is not done, it is necessary
-to [cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
-`client.py`. The file `client.mpy` is provided for those unable to do this.
+`client.py` as bytecode. If this is not done, it is necessary to
+[cross compile](https://github.com/micropython/micropython/tree/master/mpy-cross)
+`client.py`. The file `client.mpy` is provided for those unable to do this. If
+freezing, create an `iot` directory in your modules directory and copy
+`iot/client.py` and the directory `iot/primitives` and contents there.
 
-#### Preconditions
+Pre-requisites: firmware must be a current daily build or a release build after
+V1.12. If upgrading, particularly on an ESP8266, it is wise to erase flash
+prior to installtion. In particular this will ensure the use of littlefs with
+its associated RAM saving.
+
+This repository is a python package, consequently on the client the directory
+structure must be retained. The following installs all demos on the target.
+
+Clone the repository after moving to a directory of your choice:
+```
+git clone https://github.com/peterhinch/micropython-iot
+```
+Installation consists of copying the `iot` directory and contents to an `iot` 
+directory on the boot device. On ESP8266 or ESP32 the boot device is`/pyboard`.
+On the Pyboard D it will be `/flash` or `/sd` depending on whether an SD card
+is fitted.
+
+Copying may be done using any tool but I recommend
+[rshell](https://github.com/dhylands/rshell). If this is used start in the
+directory on your PC containing the clone, start `rshell` and issue (adapting
+the boot device for your platform):
+```
+cp -r iot /pyboard/iot/
+```
+On ESP8266, unless frozen, it is necessary to delete `client.py` to force the
+use of `client.mpy`:
+```
+rm /pyboard/iot/client.py
+```
+
+#### Preconditions for demos
 
 The demo programs store client configuration data in a file `local.py`. Each
 demo has its own `local.py` located in the directory of the demo code. This
 contains the following constants which should be edited to match local
-conditions:
+conditions. Remove the `use_my_local` hack designed for my WiFi privacy.:
 
 ```python
 MY_ID = '1'  # Client-unique string.
-SERVER = '192.168.0.41'  # Server IP address.
-SSID = 'my_ssid'
-PW = 'WiFi_password'
+SERVER = '192.168.0.10'  # Server IP address.
+SSID = 'use_my_local'  # Insert your WiFi credentials
+PW = 'PASSWORD'
 PORT = 8123
 TIMEOUT = 2000
+# The following may be deleted
+if SSID == 'use_my_local':
+    from iot.examples.my_local import *
 ```
 
 The ESP8266 can store WiFi credentials in flash memory. If desired, ESP8266
@@ -210,44 +263,6 @@ Note that the server-side examples below specify `python3` in the run command.
 In every case `micropython` may be substituted to run under the Unix build of
 MicroPython.
 
-#### File copy
-
-This repository is built to be used as a python package. This means that on the
-client the directory structure must be retained.
-
-First clone the repository:
-```
-git clone https://github.com/peterhinch/micropython-iot micropython_iot
-```
-It's important to clone it into a directory *micropython_iot* as Python syntax
-disallows names containing a "-" character.
-
-On the client create the directory `micropython_iot` in the boot device. On
-ESP8266 this is `/pyboard`. On the Pyboard D it will be `/flash` or `/sd`
-depending on whether an SD card is fitted. Copy the following files to it:
- 1. `client.mpy`
- 2. `__init__.py`
-Note that the ESP8266 has insufficient RAM to compile `client.py` so the cross
-compiled `client.mpy` must be used. Clients with more RAM can accept either.
-
-To install the demos the following directories and their contents should be
-copied to the `micropython_iot` directory:
- 1. `qos`
- 2. `examples`
- 3. `remote`
-
-This can be done using any tool but I recommend
-[rshell](https://github.com/dhylands/rshell). If this is used follow these
-commands (amend the boot device for non-ESP8266 clients):
-```
-rshell -p /dev/ttyS3  # adapt the port to your situation
-mkdir /pyboard/micropython_iot   # create directory on your esp8266  
-cp client.mpy __init__.py /pyboard/micropython_iot/
-cp -r examples /pyboard/micropython_iot/
-cp -r qos /pyboard/micropython_iot/
-cp -r remote /pyboard/micropython_iot/
-```
-
 ## 3.2 Usage
 
 #### The main demo
@@ -256,73 +271,71 @@ This illustrates up to four clients communicating with the server. The demo
 expects the clients to have ID's in the range 1 to 4: if using multiple clients
 edit each one's `local.py` accordingly.
 
-On the server navigate to the parent directory of `micropython_iot` and run:
+On the server navigate to the parent directory of `iot` and run:
 ```
-python3 -m micropython_iot.examples.s_app_cp
+python3 -m iot.examples.s_app_cp
 ```
 or
 ```
-micropython -m micropython_iot.examples.s_app_cp
+micropython -m iot.examples.s_app_cp
 ```
 On each client run:
 ```
-from micropython_iot.examples import c_app
+import iot.examples.c_app
 ```
 
 #### The remote control demo
 
 This shows one ESP8266 controlling another. The transmitter should have a
-pushbutton between GPIO 0 and gnd.
+pushbutton between GPIO 0 and gnd, both should have an LED on GPIO 2.
 
-On the server navigate to the parent directory of `micropython_iot` and run:
+On the server navigate to the parent directory of `iot` and run:
 ```
-python3 -m micropython_iot.remote.s_comms_cp
+python3 -m iot.remote.s_comms_cp
 ```
 or
 ```
-micropython -m micropython_iot.remote.s_comms_cp
+micropython -m iot.remote.s_comms_cp
 ```
 
 On the esp8266 run (on transmitter and receiver respectively):
 
 ```
-from micropython_iot.remote import c_comms_tx
-from micropython_iot.remote import c_comms_rx
+import iot.remote.c_comms_tx
+import iot.remote.c_comms_rx
 ```
 
 #### The standard qos (Quality of service) demo
 
 This test program verifies that each message (in each direction) is received
-exactly once. On the server navigate to the parent directory of
-`micropython_iot` and run:
+exactly once. On the server navigate to the parent directory of `iot` and run:
 ```
-python3 -m micropython_iot.qos.s_qos_cp
+python3 -m iot.qos.s_qos_cp
 ```
 or
 ```
-micropython -m micropython_iot.qos.s_qos_cp
+micropython -m iot.qos.s_qos_cp
 ```
 On the client, after editing `/pyboard/qos/local.py`, run:
 ```
-from micropython_iot.qos import c_qos
+import iot.qos.c_qos
 ```
 
 #### The fast qos demo
 
 This tests the option of concurrent `qos` writes. This is an advanced feature
-discussed in [section 7.1](./README.md#71-the-wait-argument). This demo runs
-but is not resilient on ESP32. See the above link. To run the demo, on the
-server navigate to the parent directory of `micropython_iot` and run:
+discussed in [section 7.1](./README.md#71-the-wait-argument). To run the demo,
+on the server navigate to the parent directory of `iot` and run:
 ```
-python3 -m micropython_iot.qos.s_qos_fast
+python3 -m iot.qos.s_qos_fast
 ```
 or
 ```
-micropython -m micropython_iot.qos.s_qos_fast
+micropython -m iot.qos.s_qos_fast
 ```
 On the client, after editing `/pyboard/qos/local.py`, run:
 ```
-from micropython_iot.qos import c_qos_fast
+import iot.qos.c_qos_fast
 ```
 
 #### Troubleshooting the demos
@@ -353,7 +366,7 @@ A basic client-side application has this form:
 ```python
 import uasyncio as asyncio
 import ujson
-from micropython_iot import client
+from iot import client
 import local  # or however you configure your project
 
 
@@ -533,7 +546,7 @@ A basic server-side application has this form:
 ```python
 import asyncio
 import json
-from micropython_iot import server
+from iot import server
 import local  # or however you want to configure your project
 
 class App:
@@ -747,9 +760,10 @@ previous messages are pending. Applications should be designed to limit the
 number of such `qos` messages sent in quick succession: on ESP8266 clients
 buffer overflows can occur.
 
-The ESP32 is not resilient under these circumstances. Setting `wait=False` is
-not recommended. If used, applications should be tested to verify resilience in
-the face of WiFi outages.
+In testing in 2019 the ESP32 was not resilient under these circumstances; this
+appears to have been fixed in current firmware builds. Nevertheless setting
+`wait=False` potentially risks resilience. If used, applications should be
+tested to verify quality of service in the presence of WiFi outages.
 
 If messages are sent with `wait=False` there is a chance that they may not be
 received in the order in which they were sent. As described above, in the event
@@ -794,9 +808,9 @@ reconnections.
 
 ## 8.2 Client RAM utilisation
 
-On ESP8266 with release build V1.10 the demo reports over 13KB free. Free RAM
-of 21.8KB was achieved with compiled firmware with `client.py`, `__init__.py`
-and `uasyncio` frozen as bytecode.
+On ESP8266 with a current (June 2020) daily build the demo reports over 20KB
+free. Free RAM of 25.9KB was achieved with compiled firmware with frozen 
+bytecode as per [Installation](./README.md#31-installation).
 
 ###### [Contents](./README.md#1-contents)
 

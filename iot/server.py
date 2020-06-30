@@ -1,7 +1,7 @@
 # server_cp.py Server for IOT communications.
 
 # Released under the MIT licence.
-# Copyright (C) Peter Hinch 2019
+# Copyright (C) Peter Hinch 2019-2020
 
 # Maintains bidirectional full-duplex links between server applications and
 # multiple WiFi connected clients. Each application instance connects to its
@@ -15,7 +15,7 @@
 # Under CPython requires CPython 3.8 or later.
 
 import sys
-from . import gmid, isnew  # __init__.py
+from iot.primitives import gmid, isnew  # __init__.py
 
 upython = sys.implementation.name == 'micropython'
 if upython:
@@ -154,6 +154,7 @@ class Connection:
     def __init__(self, to_secs, c_sock, client_id, init_str, verbose):
         self._to_secs = to_secs
         self._tim_short = self._to_secs / 10
+        self._tim_short_ms = int(self._to_secs * 100)  # MicroPython only!
         self._tim_ka = self._to_secs / 4  # Keepalive interval
         self._sock = c_sock  # Socket
         self._cl_id = client_id
@@ -196,7 +197,7 @@ class Connection:
     def __await__(self):
         if upython:
             while not self():
-                yield from asyncio.sleep_ms(self._tim_short * 1000)
+                yield from asyncio.sleep_ms(self._tim_short_ms)
         else: 
             # CPython: Meet requirement for generator in __await__
             # https://github.com/python/asyncio/issues/451

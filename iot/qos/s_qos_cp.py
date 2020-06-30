@@ -1,16 +1,15 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Released under the MIT licence. See LICENSE.
-# Copyright (C) Peter Hinch 2018-2020
-
 # s_app_cp.py Server-side application demo
 # Run under CPython 3.8 or later or MicroPython Unix build.
 # Under MicroPython uses and requires uasyncio V3.
 
+# Released under the MIT licence. See LICENSE.
+# Copyright (C) Peter Hinch 2018-2020
+
 # The App class emulates a user application intended to service a single
-# client. In this case we have four instances of the application servicing
-# clients with ID's 1-4.
+# client.
 
 try:
     import asyncio
@@ -20,16 +19,19 @@ try:
     import json
 except ImportError:
     import ujson as json
-
-from micropython_iot import server
-from .local import PORT, TIMEOUT
+from iot import server
+from iot.qos.local import PORT, TIMEOUT
 
 
 class App:
     def __init__(self, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
-        self.data = [0, 0, 0]  # Exchange a 3-list with remote
+        self.tx_msg_id = 0
+        self.dupes = 0  # Incoming dupe count
+        self.rxbuf = []
+        self.missing = 0
+        self.last = 0
         asyncio.create_task(self.start())
 
     async def start(self):
@@ -38,31 +40,45 @@ class App:
         asyncio.create_task(self.reader())
         asyncio.create_task(self.writer())
 
+    def count_missed(self):
+        if len(self.rxbuf) >= 25:
+            idx = 0
+            while self.rxbuf[idx] < self.last + 10:
+                idx += 1
+            self.last += 10
+            self.missing += 10 - idx
+            self.rxbuf = self.rxbuf[idx:]
+        return self.missing
+
     async def reader(self):
         print('Started reader')
         while True:
             line = await self.conn.readline()  # Pause in event of outage
-            self.data = json.loads(line)
-            # Receives [restart count, uptime in secs, mem_free]
-            print('Got', self.data, 'from remote', self.client_id)
+            data = json.loads(line)
+            rxmid = data[0]
+            if rxmid in self.rxbuf:
+                self.dupes += 1
+            else:
+                self.rxbuf.append(rxmid)
+            print('Got {} from remote {}'.format(data, self.client_id))
+            print('Dupes ignored {} local {} remote. '.format(self.dupes, data[3]), end='')
+            print('Missed msg {} local {} remote.'.format(self.count_missed(), data[4]))
 
-    # Send
-    # [approx app uptime in secs/5, received client uptime, received mem_free]
+    # Send [ID, message count since last outage]
     async def writer(self):
         print('Started writer')
         count = 0
         while True:
-            self.data[0] = count
+            data = [self.tx_msg_id, count]
+            self.tx_msg_id += 1
             count += 1
-            print('Sent', self.data, 'to remote', self.client_id, '\n')
-            # .write() behaves as per .readline()
-            await self.conn.write(json.dumps(self.data))
+            print('Sent {} to remote {}\n'.format(data, self.client_id))
+            await self.conn.write(json.dumps(data))
             await asyncio.sleep(5)
 
 async def main():
-    clients = {'1', '2', '3', '4'}
-    apps = [App(n) for n in clients]  # Accept 4 clients with ID's 1-4
-    await server.run(clients, True, port=PORT, timeout=TIMEOUT)
+    app = App('qos')
+    await server.run({'qos'}, True, port=PORT, timeout=TIMEOUT)
 
 def run():
     try:

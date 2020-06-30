@@ -1,9 +1,9 @@
 # asi2c_i.py A communications link using I2C slave mode on Pyboard.
-# Initiator class
+# Initiator class. Adapted for uasyncio V3, WBUS DIP28.
 
 # The MIT License (MIT)
 #
-# Copyright (c) 2018 Peter Hinch
+# Copyright (c) 2018-2020 Peter Hinch
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,7 @@ import uasyncio as asyncio
 import machine
 import utime
 import gc
-from asi2c import Channel
+from .asi2c import Channel
 
 
 # The initiator is an I2C slave. It runs on a Pyboard. I2C uses pyb for slave
@@ -53,8 +53,7 @@ class Initiator(Channel):
         self.block_max = 0  # Blocking times: max
         self.block_sum = 0  # Total
         self.block_cnt = 0  # Count
-        self.loop = asyncio.get_event_loop()
-        self.loop.create_task(self._run())
+        asyncio.create_task(self._run())
 
     def waitfor(self, val):  # Wait for response for 1 sec
         tim = utime.ticks_ms()
@@ -80,14 +79,14 @@ class Initiator(Channel):
             await self._sync()
             await asyncio.sleep(1)  # Ensure Responder is ready
             if self.cr_go:
-                self.loop.create_task(self.cr_go(*self.go_args))
+                asyncio.create_task(self.cr_go(*self.go_args))
             while True:
                 gc.collect()
                 try:
                     tstart = utime.ticks_us()
                     self._sendrx()
                     t = utime.ticks_diff(utime.ticks_us(), tstart)
-                except OSError:
+                except OSError:  # Reboot remote.
                     break
                 await asyncio.sleep_ms(Initiator.t_poll)
                 self.block_max = max(self.block_max, t)  # self measurement
@@ -99,6 +98,16 @@ class Initiator(Channel):
             if self.reset is None:  # No means of recovery
                 raise OSError('Responder fail.')
 
+    def _send(self, d):
+        # CRITICAL TIMING. Trigger interrupt on responder immediately before
+        # send. Send must start before RX begins. Fast responders may need to
+        # do a short blocking wait to guarantee this.
+        self.own(1)  # Trigger interrupt.
+        self.i2c.send(d)  # Blocks until RX complete.
+        self.waitfor(1)
+        self.own(0)
+        self.waitfor(0)
+
     # Send payload length (may be 0) then payload (if any)
     def _sendrx(self, sn=bytearray(2), txnull=bytearray(2)):
         siz = self.txsiz if self.cantx else txnull
@@ -106,20 +115,9 @@ class Initiator(Channel):
             siz[1] |= 0x80  # Hold off further received data
         else:
             siz[1] &= 0x7f
-        # CRITICAL TIMING. Trigger interrupt on responder immediately before
-        # send. Send must start before RX begins. Fast responders may need to
-        # do a short blocking wait to guarantee this.
-        self.own(1)  # Trigger interrupt.
-        self.i2c.send(siz)  # Blocks until RX complete.
-        self.waitfor(1)
-        self.own(0)
-        self.waitfor(0)
+        self._send(siz)
         if self.txbyt and self.cantx:
-            self.own(1)
-            self.i2c.send(self.txbyt)
-            self.waitfor(1)
-            self.own(0)
-            self.waitfor(0)
+            self._send(self.txbyt)
             self._txdone()  # Invalidate source
         # Send complete
         self.waitfor(1)  # Wait for responder to request send
@@ -133,9 +131,8 @@ class Initiator(Channel):
         self.cantx = not bool(sn[1] & 0x80)
         if n:
             self.waitfor(1)  # Wait for responder to request send
-            # print('setting up receive', n,' bytes')
             self.own(1)  # Acknowledge
-            mv = memoryview(self.rx_mv[0: n])
+            mv = self.rx_mv[0: n]  # mv is a memoryview instance
             self.i2c.recv(mv)
             self.waitfor(0)
             self.own(0)

@@ -20,8 +20,8 @@ try:
     import json
 except ImportError:
     import ujson as json
-from micropython_iot import server
-from .local import PORT, TIMEOUT
+from iot import server
+from iot.qos.local import PORT, TIMEOUT
 
 
 class App:

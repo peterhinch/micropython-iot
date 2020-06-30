@@ -11,7 +11,7 @@ import ujson
 from machine import Pin
 
 from . import local
-from micropython_iot import client
+from iot import client
 
 
 class App:
@@ -19,13 +19,14 @@ class App:
         self.verbose = verbose
         self.led = Pin(2, Pin.OUT, value=1)  # LED for received data
         self.cl = client.Client('rx', local.SERVER, local.PORT,
-                                local.SSID, local.PW, local.TIMEOUT,
+                                local.SSID, local.PW, timeout=local.TIMEOUT,
                                 verbose=verbose)
 
     async def start(self):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        asyncio.create_task(self.reader())
+        print('Got connection')
+        await self.reader()
 
     async def reader(self):
         self.verbose and print('Started reader')

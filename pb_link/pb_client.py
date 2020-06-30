@@ -1,7 +1,7 @@
 # pb_client.py Run on Pyboard/STM device. Communicate with IOT server via an
 # ESP8266 running esp_link.py
 
-# Copyright (c) Peter Hinch 2018
+# Copyright (c) Peter Hinch 2018-2020
 # Released under the MIT licence. Full text in root of this repository.
 
 # Communication uses I2C slave mode.
@@ -9,7 +9,10 @@
 import uasyncio as asyncio
 import ujson
 from . import app_base
-from . import config as cfg
+try:
+    from . import my_config as cfg  # My private config
+except ImportError:
+    from . import config as cfg
 
 # Server-side connection ID: any newline-terminated string not containing an
 # internal newline.
@@ -18,12 +21,12 @@ CONN_ID = '1\n'
 
 # User application: must be class subclassed from AppBase
 class App(app_base.AppBase):
-    def __init__(self, loop, conn_id, config, hardware, verbose):
-        super().__init__(loop, conn_id, config, hardware, verbose)
+    def __init__(self, conn_id, config, hardware, verbose):
+        super().__init__(conn_id, config, hardware, verbose)
 
     def start(self):  # Apps must implement a synchronous start method
-        self.loop.create_task(self.receiver())
-        self.loop.create_task(self.sender())
+        asyncio.create_task(self.receiver())
+        asyncio.create_task(self.sender())
 
     # If server is running s_app_cp.py it sends
     # [approx app uptime in secs/5, echoed count, echoed 99]
@@ -43,10 +46,15 @@ class App(app_base.AppBase):
             await self.write(ujson.dumps(data))
             self.verbose and print('Sent', data)
 
+app = None
 
-loop = asyncio.get_event_loop()
-app = App(loop, CONN_ID, cfg.config, cfg.hardware, True)
+async def main():
+    global app
+    app = App(CONN_ID, cfg.config, cfg.hardware, True)
+    await app.await_msg()  # Run forever awaiting messages from server
+
 try:
-    loop.run_forever()
+    asyncio.run(main())
 finally:
     app.close()  # for subsequent runs
+    asyncio.new_event_loop()

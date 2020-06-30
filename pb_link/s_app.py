@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 # s_app_cp.py Server-side application demo
-# Run under CPython 3.5 or later.
+# Run under CPython 3.8 or later.
+# MicroPython daily build or V1.13 or later.
 
 # Released under the MIT licence.
-# Copyright (C) Peter Hinch 2018
+# Copyright (C) Peter Hinch 2018-2020
 
 # The App class emulates a user application intended to service a single
 # client. In this case we have four instances of the application servicing
@@ -20,30 +21,34 @@ try:
 except ImportError:
     import ujson as json
 
-from micropython_iot import server
+from iot import server
 
 PORT = 8123
 TIMEOUT = 2000
 
 
 class App:
-    def __init__(self, loop, client_id):
+    def __init__(self, client_id):
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
         self.data = [0, 0, 0]  # Exchange a 3-list with remote
-        loop.create_task(self.start(loop))
+        asyncio.create_task(self.start())
 
-    async def start(self, loop):
+    async def start(self):
         print('Client {} Awaiting connection.'.format(self.client_id))
         self.conn = await server.client_conn(self.client_id)
-        loop.create_task(self.reader())
-        loop.create_task(self.writer())
+        asyncio.create_task(self.reader())
+        asyncio.create_task(self.writer())
 
     async def reader(self):
         print('Started reader')
         while True:
             line = await self.conn.readline()  # Pause in event of outage
-            self.data = json.loads(line)
+            try:
+                self.data = json.loads(line)
+            except ValueError:
+                print('discarding line', line)
+                continue
             # Receives [restart count, uptime in secs, mem_free]
             print('Got', self.data, 'from remote', self.client_id)
 
@@ -61,17 +66,20 @@ class App:
             await asyncio.sleep(5)
 
 
-def run():
-    loop = asyncio.get_event_loop()
+async def main():
     clients = {'1', '2', '3', '4'}
-    apps = [App(loop, n) for n in clients]  # Accept 4 clients with ID's 1-4
+    apps = [App(n) for n in clients]  # Accept 4 clients with ID's 1-4
+    await server.run(clients, True, port=PORT, timeout=TIMEOUT)
+
+def run():
     try:
-        loop.run_until_complete(server.run(loop, clients, True, port=PORT, timeout=TIMEOUT))
+        asyncio.run(main())
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
         print('Closing sockets')
         server.Connection.close_all()
+        asyncio.new_event_loop()
 
 
 if __name__ == "__main__":

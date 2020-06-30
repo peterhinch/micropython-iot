@@ -1,7 +1,7 @@
 # esp_link.py Run on ESP8266. Provides a link between Pyboard/STM device and
 # IOT server.
 
-# Copyright (c) Peter Hinch 2018
+# Copyright (c) Peter Hinch 2018-2020
 # Released under the MIT licence. Full text in root of this repository.
 
 import gc
@@ -14,7 +14,7 @@ from machine import Pin, I2C
 gc.collect()
 
 from . import asi2c
-from micropython_iot import client
+from iot import client
 gc.collect()
 
 ID = const(0)  # Config list index
@@ -26,8 +26,8 @@ SSID = const(5)
 PW = const(6)
 
 class LinkClient(client.Client):
-    def __init__(self, loop, config, swriter, verbose):
-        super().__init__(loop, config[ID], config[SERVER], config[PORT],
+    def __init__(self, config, swriter, verbose):
+        super().__init__(config[ID], config[SERVER], config[PORT],
                          config[SSID], config[PW], config[TIMEOUT],
                          conn_cb=self.conn_cb, verbose=verbose)
         self.config = config
@@ -54,7 +54,7 @@ class LinkClient(client.Client):
 
 
 class App:
-    def __init__(self, loop, verbose):
+    def __init__(self, verbose):
         self.verbose = verbose
         self.cl = None  # Client instance for server comms.
         # Instantiate a Pyboard Channel
@@ -64,26 +64,25 @@ class App:
         self.chan = asi2c.Responder(i2c, syn, ack)  # Channel to Pyboard
         self.sreader = asyncio.StreamReader(self.chan)
         self.swriter = asyncio.StreamWriter(self.chan, {})
-        loop.create_task(self.start(loop))
 
-    async def start(self, loop):
+    async def start(self):
         await self.chan.ready()  # Wait for sync
         self.verbose and print('awaiting config')
         line = await self.sreader.readline()
         config = ujson.loads(line)
 
         self.verbose and print('Setting client config', config)
-        self.cl = LinkClient(loop, config, self.swriter, self.verbose)
+        self.cl = LinkClient(config, self.swriter, self.verbose)
         self.verbose and print('App awaiting connection.')
         await self.cl
-        loop.create_task(self.to_server(loop))
-        loop.create_task(self.from_server())
-        loop.create_task(self.crashdet())
+        asyncio.create_task(self.to_server())
+        asyncio.create_task(self.from_server())
         t_rep = config[REPORT]  # Reporting interval (s)
         if t_rep:
-            loop.create_task(self.report(t_rep))
+            asyncio.create_task(self.report(t_rep))
+        await self.crashdet()
 
-    async def to_server(self, loop):
+    async def to_server(self):
         self.verbose and print('Started to_server task.')
         while True:
             line = await self.sreader.readline()
@@ -129,9 +128,9 @@ class App:
         self.chan.close()
 
 
-loop = asyncio.get_event_loop()
-app = App(loop, True)
+app = App(True)
 try:
-    loop.run_forever()
+    asyncio.run(app.start())
 finally:
     app.close()  # e.g. ctrl-c at REPL
+    asyncio.new_event_loop()

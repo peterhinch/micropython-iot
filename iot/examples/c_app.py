@@ -9,7 +9,7 @@
 import gc
 import uasyncio as asyncio
 gc.collect()
-from micropython_iot import client
+from iot import client
 gc.collect()
 import ujson
 # Optional LED. led=None if not required

@@ -15,7 +15,7 @@ except ImportError:  #CPython
     import asyncio
     import json
 
-from micropython_iot import server
+from iot import server
 
 from .local import PORT, TIMEOUT
 
@@ -64,7 +64,7 @@ def run():
     clients = {'rx', 'tx'}  # Expected clients
     apps = [App(name) for name in clients]  # Accept 2 clients
     try:
-        asyncio.run(server.run(clients, False, port=PORT, timeout=TIMEOUT))
+        asyncio.run(server.run(clients, verbose=True, port=PORT, timeout=TIMEOUT))
     except KeyboardInterrupt:
         print('Interrupted')
     finally:
