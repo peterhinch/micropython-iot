@@ -292,17 +292,13 @@ Windows or OSX support will comprise the suggestion of a Linux VM ;-)
 
 Ensure your clone of
 [the MicroPython source](https://github.com/micropython/micropython) is up to
-date, and that of this repository. Also clone
-[micropython-lib](https://github.com/micropython/micropython-lib). As an
-alternative, the library `errno.py` may be installed to your PC using
-[micropip](https://github.com/peterhinch/micropython-samples/tree/master/micropip).
+date, and that of this repository.
 
 Create a directory on your PC for symlinks to modules to be frozen. In my case
 it's called `frozen`. It contains symlinks (denoted ->) to the following:
  1. `_boot.py` -> `esp_link/_boot.py`.
  2. `inisetup.py` -> `esp_link/inisetup.py`.
  3. `flashbdev.py` -> `ports/esp8266/modules/flashbdev.py` in source tree.
- 4. `errno.py` -> file in micropython-lib (or downloaded with micropip).
 The `frozen` directory has a subdirectory  `iot` containing:
  1. `primitives` -> `iot/primitives`
  2. `client.py` ->  `iot/client.py`

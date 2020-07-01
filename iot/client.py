@@ -21,7 +21,7 @@ from sys import platform
 import network
 import utime
 import machine
-import errno
+import uerrno as errno
 from iot.primitives import gmid, isnew, launch, SetByte  # __init__.py
 Event = asyncio.Event
 Lock = asyncio.Lock
@@ -253,8 +253,7 @@ class Client:
                 # If server is down OSError e.args[0] = 111 ECONNREFUSED
                 self._sock.connect(serv)
             except OSError as e:
-                # errno no longer has ECONNABORTED or ECONNREFUSED
-                if e.args[0] == errno.ECONNRESET:  # in (errno.ECONNABORTED, errno.ECONNRESET, errno.ECONNREFUSED):
+                if e.args[0] in (errno.ECONNABORTED, errno.ECONNRESET, errno.ECONNREFUSED):
                     if init:
                         await self.bad_server()
             else:
