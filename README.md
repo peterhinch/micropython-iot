@@ -13,7 +13,7 @@ Python objects to be exchanged. Guaranteed message delivery is available.
 This project is a collaboration between Peter Hinch and Kevin Köck.
 
 As of July 2020 it has been updated to use (and require) `uasyncio` V3. See
-[section 3.1.1](./README.md#311-existing_users) for details of consequent API
+[section 3.1.1](./README.md#311-existing-users) for details of consequent API
 changes.
 
 # 0. MicroPython IOT application design
@@ -98,7 +98,7 @@ but one which persists through outages and offers guaranteed message delivery.
   2.1 [Protocol](./README.md#21-protocol)  
  3. [Files and packages](./README.md#3-files-and-packages)  
   3.1 [Installation](./README.md#31-installation)  
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.1 [Existing users](./README.md#311-existing_users)  
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.1 [Existing users](./README.md#311-existing-users)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.2 [Firmware and dependency](./README.md#312-firmware-and-dependency)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.3 [Preconditions for demos](./README.md#313-preconditions-for-demos)  
   3.2 [Usage](./README.md#32-usage)  
