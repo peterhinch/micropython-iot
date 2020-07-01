@@ -1,5 +1,3 @@
-# WARNING: This doc is out of date and under review
-
 # 0. IOT design for clients lacking a LAN interface
 
 This uses an ESP8266 to provide a resilient "socket-like" link between a non
@@ -10,19 +8,23 @@ Communication between the client and the ESP8266 uses I2C. The client must be
 capable of running I2C slave mode. This includes STM boards such as the
 Pyboard V1.x. In this doc the client device is referred to as the Pyboard.
 
- 0. [IOT design for clients lacking a LAN interface](./README.md#0-iot-design-for-clients-lacking-a-lan-interface)  
- 1. [Wiring](./README.md#1-wiring)  
- 2. [Files](./README.md#2-files)  
- 3. [Running the demo](./README.md#3-running-the-demo)  
- 4. [The Pyboard application](./README.md#4-the-pyboard-application)  
-  4.1 [Configuration](./README.md#41-configuration)  
-  4.2 [Application design](./README.md#42-application-design)  
-  4.3 [Special messages](./README.md#43-special-messages)  
-  4.4 [The AppBase class](./README.md#44-the-appbase-class)  
- 5. [ESP8266 crash detection](./README.md#5-esp8266-crash-detection)  
- 6. [Quality of service](./README.md#6-quality-of-service)  
+ 0. [IOT design for clients lacking a LAN interface](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)  
+ 1. [Wiring](./PB_LINK.md#1-wiring)  
+ 2. [Files](./PB_LINK.md#2-files)  
+ 3. [Running the demo](./PB_LINK.md#3-running-the-demo)  
+ 4. [The Pyboard application](./PB_LINK.md#4-the-pyboard-application)  
+  4.1 [Configuration](./PB_LINK.md#41-configuration)  
+  4.2 [Application design](./PB_LINK.md#42-application-design)  
+  4.3 [Special messages](./PB_LINK.md#43-special-messages)  
+  4.4 [The AppBase class](./PB_LINK.md#44-the-appbase-class)  
+ 5. [ESP8266 crash detection](./PB_LINK.md#5-esp8266-crash-detection)  
+ 6. [Quality of service](./PB_LINK.md#6-quality-of-service)  
+ 7. [Building ESP8266 firmware](./PB_LINK.md#7-building-esp8266-firmware)  
 
 # 1. Wiring
+
+Firmware should be installed on the ESP8266 prior to connecting it to the
+Pyboard.
 
 ESP8266 pin numbers are GPIO pins as used on the reference board. WeMos have
 their own numbering scheme.
@@ -36,10 +38,11 @@ their own numbering scheme.
 |  X12    |  rst    | reset    |  reset |
 |  Y8     |  4      | ack      |  D2 |
 
-Pyboard pins may be altered at will. The chosen pins enable hard I2C to be used
-but soft I2C with arbitrary pins also works. The `sync` and `ack` wires provide
-synchronisation and the `reset` line enables the Pyboard to reset the ESP8266
-if it crashes and fails to respond.
+Pyboard pins may be altered at will (with matching changes to `config.py`).
+The chosen pins enable hard I2C to be used but soft I2C with arbitrary pins
+also works. The `syn` and `ack` wires provide synchronisation and the `reset`
+line enables the Pyboard to reset the ESP8266 if it crashes and fails to
+respond.
 
 I2C requires the devices to be connected via short links and to share a common
 ground. The `sda` and `scl` lines require pullup resistors. The chosen ESP8266
@@ -48,7 +51,9 @@ pullups are needed, a typical value is 4.7KΩ to 3.3V.
 
 The I2C bus employed here cannot be shared with other devices.
 
-A common power supply is usual but not essential.
+A common power supply is usual but not essential. If the Pyboard is powered by
+USB and the ESP8266 board has a voltage regulator, the ESP may be powered from
+the Pyboard Vin pin.
 
 # 2. Installation
 
@@ -59,26 +64,20 @@ A Python package is used so directory structures must be maintained.
 These instructions assume an installation to the SD card. If installing to
 flash, substitute `flash` for `sd` below.
 
-On the Pyboard create a directory `/sd/micropython_iot`. Copy the following
-file to this directory:
- 1. `__init__.py`
-
-Create the directory  `/sd/micropython_iot/pb_link` and copy the following
-files from `micropython_iot/pb_link` to it:
- 1. `app_base.py`
- 2. `asi2c_i.py`
- 3. `config.py`
- 4. `pb_client.py`
- 5. `__init__.py`
-
-Edit `micropython_iot/pb_link/config.py` to match local conditions, notably
-server IP address and WiFi credentials. WiFi credentials may be empty strings
-if the ESP8266 has been initialised with a WiFi connection.
-
-Start by issuing
-```python
-import micropython_iot.pb_link.pb_client
+On the Pyboard copy the directory `pb_link` and its contents to '/sd'. If using
+rshell this may be done by issuing:
 ```
+cp -r pb_link /sd
+```
+Clone [the async repo](https://github.com/peterhinch/micropython-async) to
+your PC, navigate to `v3` and copy the `primitives` directory to `/sd`:
+```
+cp -r primitives /sd
+```
+
+Edit `iot/pb_link/config.py` to match local conditions, notably server IP
+address and WiFi credentials. WiFi credentials may be empty strings if the
+ESP8266 has been initialised with a WiFi connection.
 
 #### On the ESP8266
 
@@ -90,41 +89,34 @@ installed with the following commands:
 esptool.py  --port /dev/ttyUSB0 erase_flash
 esptool.py --port /dev/ttyUSB0 --baud 115200 write_flash --verify --flash_size=detect -fm dio 0 firmware-combined.bin 
 ```
-This build is designed to start on boot so no further steps are required.
+Erasure is essential. The build is designed to start on boot so no further
+steps are required.
 
-To compile your own build your `modules` directory must contain (in addition to
-its normal contents) an installation of `uasyncio`. See notes on this in the
-[main readme](../README.md#31-installation). Under `modules` create a
-directory `/pyboard/micropython_iot`. Copy the following files to it:
- 1. `__init__.py`
- 2. `client.py`
-
-Copy the directory `esp_link` with its contents to the `micropython_iot`
-directory. Compile and install the build.
-
-Edit `/pyboard/main.py` to read:
-```python
-from micropython_iot.esp_link import esp_link
-```
+To compile your own build see
+[Section 7](./PB_LINK.md#7-building-esp8266-firmware).
 
 ### Dependency
 
-`uasyncio` is required on Pyboard and ESP8266. See the notes on this in the
-[main readme](../README.md#31-installation).
+The Pyboard must be running a daily build or a release build later than V1.12.
+This is to ensure a compatible version of `uasyncio` (V3).
 
 # 3. Running the demo
 
-Ensure `/sd/micropython_iot/pb_link/config.py` matches local conditions for
-WiFi credentials and the server IP address.
+Ensure `/sd/pb_link/config.py` matches local conditions for WiFi credentials
+and server IP address.
 
-On the server navigate to the parent directory of `micropython_iot` and run
+On the server navigate to the parent directory of `pb_link` and run
 ```
-python3 -m micropython_iot.pb_link.s_app
+micropython -m pb_link.s_app
+```
+or (given Python 3.8 or newer):
+```
+python3 -m pb_link.s_app
 ```
 
-On the Pyboard run
+On the Pyboard issue
 ```python
-from micropython_iot.pb_link import pb_client
+import pb_link.pb_client
 ```
 
 # 4. The Pyboard application
@@ -168,8 +160,8 @@ The `hardware` list comprises the following elements:
 ## 4.2 Application design
 
 The code should create a class subclassed from `app_base.AppBase`. The base
-class performs initialisation. When this is complete, a `.start` method is
-called which the user class should implement.
+class performs initialisation. When this is complete, a `.start` synchronous
+method is called which the user class should implement.
 
 Typically this will launch user coroutines and terminate, as in the demo.
 
@@ -196,11 +188,10 @@ trigger asynchronous bound methods which the user may override.
 ## 4.4 The AppBase class
 
 Constructor args:
- 1. `loop` The asyncio event loop.
- 2. `conn_id` Connection ID. See below.
- 3. `config` List retrieved from `config.py` as described above.
- 4. `hardware` List retrieved from `config.py` defining the hardware interface.
- 5. `verbose` Provide debug output.
+ 1. `conn_id` Connection ID. See below.
+ 2. `config` List retrieved from `config.py` as described above.
+ 3. `hardware` List retrieved from `config.py` defining the hardware interface.
+ 4. `verbose` Provide debug output.
 
 Coroutines:
  1. `readline` Read a newline-terminated line from the server.
@@ -226,7 +217,7 @@ modify the default behaviour.
  credentials in the `config` list. If this fails an `OSError` is raised.
  2. `bad_server` No args. Awaited if server refuses an initial connection.
  Raises an `OSError`.
- 3. `report` Regularly launched if reports are requested in the config.  It
+ 3. `report` Regularly launched if reports are requested in the config. It
  receives a 3-list as an arg: `[connect_count, report_no, mem_free]` which
  describes the ESP8266 status. Prints the report.
  4. `server_ok` Launched whenever the status of the link to the server changes,
@@ -255,7 +246,7 @@ wire is in place there are two levels of crash recovery.
 
 If I2C communication fails due to an ESP8266 reboot or power cycle, the
 underlying
-[asynchronous link](https://github.com/peterhinch/micropython-async/blob/master/i2c/README.md)
+[asynchronous link](https://github.com/peterhinch/micropython-async/blob/master/v3/docs/I2C.md)
 will reboot the ESP8266 and re-synchronise without the need for explicit code.
 This caters for the bulk of potential failures and can be verified by pressing
 the ESP8266 reset button while the application is running.
@@ -278,3 +269,84 @@ recover but message loss may occur. Two observations:
  achieved at application level using response messages. When designing such a
  system bear in mind that response messages may themselves be lost in the event
  of a crash.
+
+# 7. Building ESP8266 firmware
+
+The following instructions assume that you have the toolchain for ESP8266 and
+can build and install standard firmware. They also assume knowledge of the
+process of freezing modules and the manifest system. They are based on Linux,
+the only OS for which I have any remotely recent experience. If you run
+Windows or OSX support will comprise the suggestion of a Linux VM ;-)
+
+Ensure your clone of
+[the MicroPython source](https://github.com/micropython/micropython) is up to
+date, and that of this repository. Also clone
+[micropython-lib](https://github.com/micropython/micropython-lib). As an
+alternative, the library `errno.py` may be installed to your PC using
+[micropip](https://github.com/peterhinch/micropython-samples/tree/master/micropip).
+
+Create a directory on your PC for symlinks to modules to be frozen. In my case
+it's called `frozen`. It contains symlinks (denoted ->) to the following:
+ 1. `_boot.py` -> `esp_link/_boot.py`.
+ 2. `inisetup.py` -> `esp_link/inisetup.py`.
+ 3. `flashbdev.py` -> `ports/esp8266/modules/flashbdev.py` in source tree.
+ 4. `errno.py` -> file in micropython-lib (or downloaded with micropip).
+The `frozen` directory has a subdirectory  `iot` containing:
+ 1. `primitives` -> `iot/primitives`
+ 2. `client.py` ->  `iot/client.py`
+The `iot` directory has an `esp_link` subdirectory containing:
+ 1. `as_i2c.py` -> `esp_link/as_i2c.py`
+ 2. `esp_link.py` -> `esp_link/esp_link.py`
+ 3. `__init__.py` an empty file created using `touch`.
+
+Create a PC file containing a manifest. Mine is `esp8266_iot_manifest.py`. It
+should be as follows (with the path changed to your `frozen` directory):
+```
+include("$(MPY_DIR)/extmod/uasyncio/manifest.py")
+freeze('/mnt/qnap2/data/Projects/MicroPython/micropython-iot/private/frozen')
+```
+I use the following build script, named `buildesplink` and marked executable.
+Adapt to ensure that `MANIFEST` points to your manifest file. The `cd` in line
+8 will need to be changed to match the location of your source clone. The `j 8`
+arg to `make` may also be non-optimal for your PC.
+
+`PROJECT_DIR` causes the firmware build to be copied to the project root. This
+is done purely to maintain this repo: you can remove this and the build copy.
+```bash
+#! /bin/bash
+# Build for ESP8266 esp_link
+
+PROJECT_DIR='/mnt/qnap2/data/Projects/MicroPython/micropython-iot/'
+MANIFEST='/mnt/qnap2/Scripts/manifests/esp8266_iot_manifest.py'
+BUILD='build-GENERIC'
+
+cd /mnt/qnap2/data/Projects/MicroPython/micropython/ports/esp8266
+if [ $# -eq 1 ] && [ $1 = "--clean" ]
+then
+    make clean
+fi
+if [ $# -eq 1 ] && [ $1 = "--erase" ]
+then
+    make clean
+    esptool.py  --port /dev/ttyUSB0 erase_flash
+fi
+
+if make -j 8 FROZEN_MANIFEST=$MANIFEST
+then
+    cp $BUILD/firmware-combined.bin $PROJECT_DIR
+    sleep 1
+    esptool.py --port /dev/ttyUSB0 --baud 115200 write_flash --verify --flash_size=detect -fm dio 0 $BUILD/firmware-combined.bin
+    cd -
+    sleep 1
+#    rshell -p /dev/ttyUSB0 --editor nano --buffer-size=30
+else
+    echo Build failure
+fi
+cd -
+```
+If you use the above script, issue `--erase` to erase flash on the ESP8266
+prior to installing the build. This ensures the use of littlefs. It also
+ensures that `boot.py` and `main.py` are created. The files `_boot.py` and
+`inisetup.py` handle filesystem creation and initial creation of `boot.py`
+and `main.py`, but only if there is no pre-existing filesystem.
+```

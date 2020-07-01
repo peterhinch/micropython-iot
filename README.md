@@ -836,7 +836,7 @@ The interface between the Pyboard and the ESP8266 uses I2C and is based on the
 Resilient behaviour includes automatic recovery from WiFi and server outages;
 also from ESP8266 crashes.
 
-See [documentation](./pb_link/README.md).
+See [documentation](./docs/PB_LINK.md).
 
 # 10. How it works
 
