@@ -1,5 +1,3 @@
-Notes on Unix version.
-
 # Introduction
 
 This library provides a resilient full duplex communication link between a WiFi
@@ -13,6 +11,8 @@ comprising `write` and `readline` methods. The `ujson` library enables various
 Python objects to be exchanged. Guaranteed message delivery is available.
 
 This project is a collaboration between Peter Hinch and Kevin Köck.
+
+As of July 2020 it has been updated to use (and require) `uasyncio` V3.
 
 # 0. MicroPython IOT application design
 
@@ -96,7 +96,15 @@ but one which persists through outages and offers guaranteed message delivery.
   2.1 [Protocol](./README.md#21-protocol)  
  3. [Files and packages](./README.md#3-files-and-packages)  
   3.1 [Installation](./README.md#31-installation)  
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.1 [Existing users](./README.md#311-existing_users)  
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.2 [Firmware and dependency](./README.md#312-firmware-and-dependency)  
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.3 [Preconditions for demos](./README.md#313-preconditions-for-demos)  
   3.2 [Usage](./README.md#32-usage)
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.1 [The main demo](./README.md#321-the-main-demo)  
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.2 [The remote control demo](./README.md#322-the-remote-control-demo)  
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.3 [Quality of Service demo](./README.md#323-quality-of-service-demo)  
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.4 [The fast qos demo](./README.md#324-the-fast-qos-demo)  
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.5 [Troubleshooting the demos](./README.md#325-troubleshooting-the-demos)  
  4. [Client side applications](./README.md#4-client-side-applications)  
   4.1 [The Client class](./README.md#41-the-client-class)  
    4.1.1 [Initial Behaviour](./README.md#411-initial-behaviour)  
@@ -187,7 +195,7 @@ This section describes the installation of the library and the demos. The
 ESP8266 has limited RAM: there are specific recommendations for installation on
 that platform.
 
-#### Existing users
+### 3.1.1 Existing users
 
 It is recommended to remove the old version and re-install as below.
 
@@ -196,7 +204,7 @@ event loop argument is no longer required or accepted in `Client` and `Server`
 constructors. The directory structure has changed, requiring minor changes to
 `import` statements.
 
-#### Firmware/Dependency
+### 3.1.2 Firmware and dependency
 
 On ESP8266, RAM can be saved by building firmware from source, freezing
 `client.py` as bytecode. If this is not done, it is necessary to
@@ -235,7 +243,7 @@ use of `client.mpy`:
 rm /pyboard/iot/client.py
 ```
 
-#### Preconditions for demos
+### 3.1.3 Preconditions for demos
 
 The demo programs store client configuration data in a file `local.py`. Each
 demo has its own `local.py` located in the directory of the demo code. This
@@ -265,7 +273,7 @@ MicroPython.
 
 ## 3.2 Usage
 
-#### The main demo
+### 3.2.1 The main demo
 
 This illustrates up to four clients communicating with the server. The demo
 expects the clients to have ID's in the range 1 to 4: if using multiple clients
@@ -284,7 +292,7 @@ On each client run:
 import iot.examples.c_app
 ```
 
-#### The remote control demo
+### 3.2.2 The remote control demo
 
 This shows one ESP8266 controlling another. The transmitter should have a
 pushbutton between GPIO 0 and gnd, both should have an LED on GPIO 2.
@@ -305,7 +313,7 @@ import iot.remote.c_comms_tx
 import iot.remote.c_comms_rx
 ```
 
-#### The standard qos (Quality of service) demo
+### 3.2.3 Quality of Service demo
 
 This test program verifies that each message (in each direction) is received
 exactly once. On the server navigate to the parent directory of `iot` and run:
@@ -321,7 +329,7 @@ On the client, after editing `/pyboard/qos/local.py`, run:
 import iot.qos.c_qos
 ```
 
-#### The fast qos demo
+### 3.2.4 The fast qos demo
 
 This tests the option of concurrent `qos` writes. This is an advanced feature
 discussed in [section 7.1](./README.md#71-the-wait-argument). To run the demo,
@@ -338,7 +346,7 @@ On the client, after editing `/pyboard/qos/local.py`, run:
 import iot.qos.c_qos_fast
 ```
 
-#### Troubleshooting the demos
+### 3.2.5 Troubleshooting the demos
 
 If `local.py` specifies an SSID, on startup the demo programs will pause
 indefinitely if unable to connect to the WiFi. If `SSID` is an empty string the
