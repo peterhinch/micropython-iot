@@ -22,7 +22,7 @@ import network
 import utime
 import machine
 import uerrno as errno
-from iot.primitives import gmid, isnew, launch, SetByte  # __init__.py
+from .primitives import gmid, isnew, launch, SetByte  # __init__.py
 Event = asyncio.Event
 Lock = asyncio.Lock
 

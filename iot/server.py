@@ -15,7 +15,7 @@
 # Under CPython requires CPython 3.8 or later.
 
 import sys
-from iot.primitives import gmid, isnew  # __init__.py
+from .primitives import gmid, isnew  # __init__.py
 
 upython = sys.implementation.name == 'micropython'
 if upython:
