@@ -38,19 +38,22 @@ class LinkClient(client.Client):
         try:
             await asyncio.wait_for(super().bad_wifi(), 20)
         except asyncio.TimeoutError:
-            await self.swriter.awrite('b\n')
+            self.swriter.write('b\n')
+            await self.swriter.drain()
             # Message to Pyboard and REPL. Crash the board. Pyboard
             # detects, can reboot and retry, change config, or whatever
             raise ValueError("Can't connect to {}".format(self.config[SSID]))  # croak...
 
     async def bad_server(self):
-        await self.swriter.awrite('s\n')
+        self.swriter.write('s\n')
+        await self.swriter.drain()
         raise ValueError("Server {} port {} is down.".format(
             self.config[SERVER], self.config[PORT]))  # As per bad_wifi: croak...
 
     # Callback when connection status changes
     async def conn_cb(self, status):
-        await self.swriter.awrite('u\n' if status else 'd\n')
+        self.swriter.write('u\n' if status else 'd\n')
+        await self.swriter.drain()
 
 
 class App:
@@ -100,13 +103,15 @@ class App:
         while True:
             line = await self.cl.readline()
             # Implied copy
-            await self.swriter.awrite('n{}'.format(line))
+            self.swriter.write('n{}'.format(line))
+            await self.swriter.drain()
             self.verbose and print('Sent', line.encode('utf8'), 'to Pyboard app\n')
 
     async def crashdet(self):
         while True:
             await asyncio.sleep(2)
-            await self.swriter.awrite('k\n')
+            self.swriter.write('k\n')
+            await self.swriter.drain()
 
     async def report(self, time):
         data = [0, 0, 0]
@@ -119,7 +124,8 @@ class App:
             gc.collect()
             data[2] = gc.mem_free()
             line = 'r{}\n'.format(ujson.dumps(data))
-            await self.swriter.awrite(line)
+            self.swriter.write(line)
+            await self.swriter.drain()
 
     def close(self):
         self.verbose and print('Closing interfaces')

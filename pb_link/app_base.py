@@ -28,27 +28,25 @@ class AppBase:
         self.chan = asi2c_i.Initiator(i2c, syn, ack, rst, verbose, self._go, (), self.reboot)
         self.sreader = asyncio.StreamReader(self.chan)
         self.swriter = asyncio.StreamWriter(self.chan, {})
-
-    # ESP8266 crash: prevent user code from writing until reboot sequence complete
-    #async def _fail(self):
-        #self.verbose and print('_fail locking')
-        #await self.wlock.acquire()
-        #self.verbose and print('_fail locked')
+        self.lqueue = []  # Outstanding lines
 
     # Runs after sync acquired on 1st or subsequent ESP8266 boots.
     async def _go(self):
         self.verbose and print('Sync acquired, sending config')
-        # On 1st pass user coros haven't started so don't need lock. On
-        # subsequent passes (crash recovery) lock was acquired by ._fail()
-        await self.swriter.awrite(self.cfg)  # 1st message is config
+        if not self.wlock.locked():
+            await self.wlock.acquire()  # for as long as it takes
+        self.verbose and print('Got lock, sending config', self.cfg)
+        self.swriter.write(self.cfg)
+        await self.swriter.drain()  # 1st message is config
+        while self.lqueue:
+            self.swriter.write(self.lqueue.pop(0))
+            await self.swriter.drain()
+        self.wlock.release()
         # At this point ESP8266 can handle the Pyboard interface but may not
         # yet be connected to the server
         if self.initial:
             self.initial = False
             self.start()
-        else:  # Restarting after an ESP8266 crash
-            if self.wlock.locked():
-                self.wlock.release()
 
     # **** API ****
     async def await_msg(self):
@@ -76,8 +74,16 @@ class AppBase:
         ch = chr(0x30 + ((qos << 1) | wait))  # Encode args
         fstr =  '{}{}' if line.endswith('\n') else '{}{}\n'
         line = fstr.format(ch, line)
-        async with self.wlock:  # Not during a resync.
-            await self.swriter.awrite(line)
+        try:
+            await asyncio.wait_for(self.wlock.acquire(), 1)
+            self.swriter.write(line)
+            await self.swriter.drain()
+        except asyncio.TimeoutError:
+            self.verbose and print('Timeout getting lock: queueing line', line)
+            self.lqueue.append(line)  # ESP crash, send line later
+        finally:
+            if self.wlock.locked():
+                self.wlock.release()
 
     async def readline(self):
         await self.rxmsg
@@ -92,9 +98,10 @@ class AppBase:
             raise OSError('Cannot reset ESP8266.')
         asyncio.create_task(self.chan.reboot())  # Hardware reset board
         self.tim_boot.stop()  # No more reboots
-        # Try to get lock to stop user writes
+        # Try to get lock to stop user writes. Should always succeed as
+        # write timeout is shorter
         try:
-            await asyncio.wait_for(self.wlock.acquire(), 1)
+            await asyncio.wait_for(self.wlock.acquire(), 3)
         except asyncio.TimeoutError:
             self.verbose and print('Could not get lock')
 

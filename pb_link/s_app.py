@@ -47,7 +47,7 @@ class App:
             try:
                 self.data = json.loads(line)
             except ValueError:
-                print('discarding line', line)
+                print('discarding line', line)  # Defensive. I think it never happens.
                 continue
             # Receives [restart count, uptime in secs, mem_free]
             print('Got', self.data, 'from remote', self.client_id)

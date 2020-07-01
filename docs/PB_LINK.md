@@ -261,7 +261,7 @@ the ESP8266 reset button while the application is running.
 
 The `esp_link.py` driver sends periodic keepalives to the Pyboard. The
 `AppBase` pyboard client reboots the ESP8266 if these stop being received. This
-cab be verified with a serial connection to the ESP8266 and issuing `ctrl-c`.
+can be verified with a serial connection to the ESP8266 and issuing `ctrl-c`.
 
 ###### [Contents](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)
 
@@ -320,42 +320,36 @@ arg to `make` may also be non-optimal for your PC.
 
 `PROJECT_DIR` causes the firmware build to be copied to the project root. This
 is done purely to maintain this repo: you can remove this and the build copy.
+
+You may also need to adapt the two instances of `--port /dev/ttyUSB0`.
 ```bash
 #! /bin/bash
-# Build for ESP8266 esp_link
+# Build for ESP8266 esp_link. Enforce flash erase.
 
 PROJECT_DIR='/mnt/qnap2/data/Projects/MicroPython/micropython-iot/'
 MANIFEST='/mnt/qnap2/Scripts/manifests/esp8266_iot_manifest.py'
 BUILD='build-GENERIC'
 
 cd /mnt/qnap2/data/Projects/MicroPython/micropython/ports/esp8266
-if [ $# -eq 1 ] && [ $1 = "--clean" ]
-then
-    make clean
-fi
-if [ $# -eq 1 ] && [ $1 = "--erase" ]
-then
-    make clean
-    esptool.py  --port /dev/ttyUSB0 erase_flash
-fi
+
+make clean
+esptool.py  --port /dev/ttyUSB0 erase_flash
 
 if make -j 8 FROZEN_MANIFEST=$MANIFEST
 then
     cp $BUILD/firmware-combined.bin $PROJECT_DIR
     sleep 1
-    esptool.py --port /dev/ttyUSB0 --baud 115200 write_flash --verify --flash_size=detect -fm dio 0 $BUILD/firmware-combined.bin
+    esptool.py --port /dev/ttyUSB0 --baud 115200 write_flash --flash_size=detect -fm dio 0 $BUILD/firmware-combined.bin
     cd -
-    sleep 1
-#    rshell -p /dev/ttyUSB0 --editor nano --buffer-size=30
 else
     echo Build failure
 fi
 cd -
 ```
-If you use the above script, issue `--erase` to erase flash on the ESP8266
-prior to installing the build. This ensures the use of littlefs. It also
-ensures that `boot.py` and `main.py` are created. The files `_boot.py` and
-`inisetup.py` handle filesystem creation and initial creation of `boot.py`
-and `main.py`, but only if there is no pre-existing filesystem.
+This script erases flash for the following reasons. Erasure ensures the use of
+littlefs which saves RAM. It also ensures that `boot.py` and `main.py` are
+created. The files `_boot.py` and `inisetup.py` handle filesystem creation and
+writing out of `boot.py` and `main.py`, but only if there is no pre-existing
+filesystem.
 
 ###### [Contents](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)
