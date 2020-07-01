@@ -99,7 +99,7 @@ but one which persists through outages and offers guaranteed message delivery.
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.1 [Existing users](./README.md#311-existing_users)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.2 [Firmware and dependency](./README.md#312-firmware-and-dependency)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.1.3 [Preconditions for demos](./README.md#313-preconditions-for-demos)  
-  3.2 [Usage](./README.md#32-usage)
+  3.2 [Usage](./README.md#32-usage)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.1 [The main demo](./README.md#321-the-main-demo)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.2 [The remote control demo](./README.md#322-the-remote-control-demo)  
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.2.3 [Quality of Service demo](./README.md#323-quality-of-service-demo)  
