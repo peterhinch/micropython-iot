@@ -21,6 +21,8 @@ Pyboard V1.x. In this doc the client device is referred to as the Pyboard.
  6. [Quality of service](./PB_LINK.md#6-quality-of-service)  
  7. [Building ESP8266 firmware](./PB_LINK.md#7-building-esp8266-firmware)  
 
+###### [Main README](../README.md)
+
 # 1. Wiring
 
 Firmware should be installed on the ESP8266 prior to connecting it to the
@@ -53,7 +55,9 @@ The I2C bus employed here cannot be shared with other devices.
 
 A common power supply is usual but not essential. If the Pyboard is powered by
 USB and the ESP8266 board has a voltage regulator, the ESP may be powered from
-the Pyboard Vin pin.
+the Pyboard `Vin` pin.
+
+###### [Contents](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)
 
 # 2. Installation
 
@@ -99,6 +103,8 @@ To compile your own build see
 
 The Pyboard must be running a daily build or a release build later than V1.12.
 This is to ensure a compatible version of `uasyncio` (V3).
+
+###### [Contents](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)
 
 # 3. Running the demo
 
@@ -238,6 +244,8 @@ except (optionally) as the last character.
 Subclasses must define a synchronous `start` bound method. This takes no args.
 Typically it launches user coroutines.
 
+###### [Contents](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)
+
 # 5. ESP8266 crash detection
 
 The design of the ESP8266 communication link with the server is resilient and
@@ -255,6 +263,8 @@ The `esp_link.py` driver sends periodic keepalives to the Pyboard. The
 `AppBase` pyboard client reboots the ESP8266 if these stop being received. This
 cab be verified with a serial connection to the ESP8266 and issuing `ctrl-c`.
 
+###### [Contents](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)
+
 # 6. Quality of service
 
 Issues relating to message integrity and latency are discussed
@@ -269,6 +279,8 @@ recover but message loss may occur. Two observations:
  achieved at application level using response messages. When designing such a
  system bear in mind that response messages may themselves be lost in the event
  of a crash.
+
+###### [Contents](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)
 
 # 7. Building ESP8266 firmware
 
@@ -349,4 +361,5 @@ prior to installing the build. This ensures the use of littlefs. It also
 ensures that `boot.py` and `main.py` are created. The files `_boot.py` and
 `inisetup.py` handle filesystem creation and initial creation of `boot.py`
 and `main.py`, but only if there is no pre-existing filesystem.
-```
+
+###### [Contents](./PB_LINK.md#0-iot-design-for-clients-lacking-a-lan-interface)
