@@ -333,16 +333,19 @@ BUILD='build-GENERIC'
 cd /mnt/qnap2/data/Projects/MicroPython/micropython/ports/esp8266
 
 make clean
-esptool.py  --port /dev/ttyUSB0 erase_flash
-
-if make -j 8 FROZEN_MANIFEST=$MANIFEST
+if esptool.py --port /dev/ttyUSB0 erase_flash
 then
-    cp $BUILD/firmware-combined.bin $PROJECT_DIR
-    sleep 1
-    esptool.py --port /dev/ttyUSB0 --baud 115200 write_flash --flash_size=detect -fm dio 0 $BUILD/firmware-combined.bin
-    cd -
+    if make -j 8 FROZEN_MANIFEST=$MANIFEST
+    then
+        cp $BUILD/firmware-combined.bin $PROJECT_DIR
+        sleep 1
+        esptool.py --port /dev/ttyUSB0 --baud 115200 write_flash --flash_size=detect -fm dio 0 $BUILD/firmware-combined.bin
+        cd -
+    else
+        echo Build failure
+    fi
 else
-    echo Build failure
+    echo Connect failure
 fi
 cd -
 ```

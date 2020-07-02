@@ -33,8 +33,8 @@ class AppBase:
     # Runs after sync acquired on 1st or subsequent ESP8266 boots.
     async def _go(self):
         self.verbose and print('Sync acquired, sending config')
-        if not self.wlock.locked():
-            await self.wlock.acquire()  # for as long as it takes
+        if not self.wlock.locked():  # May have been acquired in .reboot
+            await self.wlock.acquire()
         self.verbose and print('Got lock, sending config', self.cfg)
         self.swriter.write(self.cfg)
         await self.swriter.drain()  # 1st message is config
@@ -46,7 +46,7 @@ class AppBase:
         # yet be connected to the server
         if self.initial:
             self.initial = False
-            self.start()
+            self.start()  # User starts read and write tasks
 
     # **** API ****
     async def await_msg(self):
@@ -78,9 +78,10 @@ class AppBase:
             await asyncio.wait_for(self.wlock.acquire(), 1)
             self.swriter.write(line)
             await self.swriter.drain()
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError:  # Lock is set because ESP has crashed
             self.verbose and print('Timeout getting lock: queueing line', line)
-            self.lqueue.append(line)  # ESP crash, send line later
+            # Send line later. Can avoid message loss, but this
+            self.lqueue.append(line)  # isn't a bomb-proof guarantee
         finally:
             if self.wlock.locked():
                 self.wlock.release()
@@ -91,19 +92,16 @@ class AppBase:
         self.rxmsg.clear()
         return line
 
-    # ESP8266 crash: prevent user code from writing until reboot sequence complete
+    # Stopped getting keepalives. ESP8266 crash: prevent user code from writing
+    # until reboot sequence complete
     async def reboot(self):
         self.verbose and print('AppBase reboot')
         if self.chan.reset is None:  # No config for reset
             raise OSError('Cannot reset ESP8266.')
         asyncio.create_task(self.chan.reboot())  # Hardware reset board
         self.tim_boot.stop()  # No more reboots
-        # Try to get lock to stop user writes. Should always succeed as
-        # write timeout is shorter
-        try:
-            await asyncio.wait_for(self.wlock.acquire(), 3)
-        except asyncio.TimeoutError:
-            self.verbose and print('Could not get lock')
+        if not self.wlock.locked():  # Prevent user writes
+            await self.wlock.acquire()
 
     def close(self):
         self.verbose and print('Closing channel.')
