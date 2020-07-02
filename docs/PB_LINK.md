@@ -271,11 +271,12 @@ Issues relating to message integrity and latency are discussed
 [in the main README](../README.md#7-quality-of-service).
 
 Note that if the ESP8266 actually crashes all bets are off. The system will
-recover but message loss may occur. Two observations:
+recover but message loss may occur. Three observations:
  1. In extensive testing crashes were very rare and may have had electrical
  causes such as noise on the power line. Only one crash was observed when
  powered by a battery.
- 2. A quality of service guarantee, even in the presence of crashes, may be
+ 2. The ESP8266 firmware reports nearly 26K of free RAM which is substantial.
+ 3. A quality of service guarantee, even in the presence of crashes, may be
  achieved at application level using response messages. When designing such a
  system bear in mind that response messages may themselves be lost in the event
  of a crash.

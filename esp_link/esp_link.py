@@ -17,18 +17,18 @@ from . import asi2c
 from iot import client
 gc.collect()
 
-ID = const(0)  # Config list index
-PORT = const(1)
-SERVER = const(2)
-TIMEOUT = const(3)
-REPORT = const(4)
-SSID = const(5)
-PW = const(6)
+_ID = const(0)  # Config list index
+_PORT = const(1)
+_SERVER = const(2)
+_TIMEOUT = const(3)
+_REPORT = const(4)
+_SSID = const(5)
+_PW = const(6)
 
 class LinkClient(client.Client):
     def __init__(self, config, swriter, verbose):
-        super().__init__(config[ID], config[SERVER], config[PORT],
-                         config[SSID], config[PW], config[TIMEOUT],
+        super().__init__(config[_ID], config[_SERVER], config[_PORT],
+                         config[_SSID], config[_PW], config[_TIMEOUT],
                          conn_cb=self.conn_cb, verbose=verbose)
         self.config = config
         self.swriter = swriter
@@ -42,13 +42,13 @@ class LinkClient(client.Client):
             await self.swriter.drain()
             # Message to Pyboard and REPL. Crash the board. Pyboard
             # detects, can reboot and retry, change config, or whatever
-            raise ValueError("Can't connect to {}".format(self.config[SSID]))  # croak...
+            raise ValueError("Can't connect to {}".format(self.config[_SSID]))  # croak...
 
     async def bad_server(self):
         self.swriter.write('s\n')
         await self.swriter.drain()
         raise ValueError("Server {} port {} is down.".format(
-            self.config[SERVER], self.config[PORT]))  # As per bad_wifi: croak...
+            self.config[_SERVER], self.config[_PORT]))  # As per bad_wifi: croak...
 
     # Callback when connection status changes
     async def conn_cb(self, status):
@@ -80,7 +80,7 @@ class App:
         await self.cl
         asyncio.create_task(self.to_server())
         asyncio.create_task(self.from_server())
-        t_rep = config[REPORT]  # Reporting interval (s)
+        t_rep = config[_REPORT]  # Reporting interval (s)
         if t_rep:
             asyncio.create_task(self.report(t_rep))
         await self.crashdet()
@@ -112,6 +112,7 @@ class App:
             await asyncio.sleep(2)
             self.swriter.write('k\n')
             await self.swriter.drain()
+            gc.collect()
 
     async def report(self, time):
         data = [0, 0, 0]
@@ -133,10 +134,12 @@ class App:
             self.cl.close()
         self.chan.close()
 
+async def main():
+    app = App(True)
+    await app.start()
 
-app = App(True)
 try:
-    asyncio.run(app.start())
+    asyncio.run(main())
 finally:
     app.close()  # e.g. ctrl-c at REPL
     asyncio.new_event_loop()
