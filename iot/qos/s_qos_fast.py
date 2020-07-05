@@ -20,8 +20,16 @@ try:
     import json
 except ImportError:
     import ujson as json
+import time
 from iot import server
-from iot.qos.local import PORT, TIMEOUT
+from .local import PORT, TIMEOUT
+from .check_mid import CheckMid
+
+import sys
+def _handle_exception(loop, context):
+    print('Global handler')
+    sys.print_exception(context["exception"])
+    sys.exit()
 
 
 class App:
@@ -29,10 +37,8 @@ class App:
         self.client_id = client_id  # This instance talks to this client
         self.conn = None  # Connection instance
         self.tx_msg_id = 0
-        self.dupes = 0  # Incoming dupe count
-        self.rxbuf = []
-        self.missing = 0
-        self.last = 0
+        self.cm = CheckMid()  # Check message ID's for dupes, missing etc.
+        self.data = [0, 0, 0, 0, 0]  # Data from remote
         asyncio.create_task(self.start())
 
     async def start(self):
@@ -40,30 +46,26 @@ class App:
         self.conn = await server.client_conn(self.client_id)
         asyncio.create_task(self.reader())
         asyncio.create_task(self.writer())
-
-    def count_missed(self):
-        if len(self.rxbuf) >= 25:
-            idx = 0
-            while self.rxbuf[idx] < self.last + 10:
-                idx += 1
-            self.last += 10
-            self.missing += 10 - idx
-            self.rxbuf = self.rxbuf[idx:]
-        return self.missing
+        st = time.time()
+        cm = self.cm
+        data = self.data
+        while True:
+            await asyncio.sleep(30)
+            outages = self.conn.nconns - 1
+            ut = (time.time() - st) / 3600  # Uptime in hrs
+            print('Uptime {:6.2f}hr outages {}'.format(ut, outages))
+            print('Dupes ignored {} local {} remote. '.format(cm.dupe, data[3]), end='')
+            print('Missed msg {} local {} remote.'.format(cm.miss, data[4]))
 
     async def reader(self):
         print('Started reader')
+        cm = CheckMid()  # Check message ID's for dupes, missing etc.
         while True:
             line = await self.conn.readline()  # Pause in event of outage
             data = json.loads(line)
-            rxmid = data[0]
-            if rxmid in self.rxbuf:
-                self.dupes += 1
-            else:
-                self.rxbuf.append(rxmid)
+            self.cm(data[0])
             print('Got {} from remote {}'.format(data, self.client_id))
-            print('Dupes ignored {} local {} remote. '.format(self.dupes, data[3]), end='')
-            print('Missed msg {} local {} remote.'.format(self.count_missed(), data[4]))
+            self.data = data
 
     # Send [ID, message count since last outage]
     async def writer(self):
@@ -75,13 +77,13 @@ class App:
                 self.tx_msg_id += 1
                 count += 1
                 await self.conn  # Only launch write if link is up
-                # while not self.conn():
-                # await asyncio.sleep(0.05)
                 print('Sent {} to remote {}\n'.format(data, self.client_id))
                 asyncio.create_task(self.conn.write(json.dumps(data), wait=False))
             await asyncio.sleep(3.95)
 
 async def main():
+    loop = asyncio.get_event_loop()  # TEST
+    loop.set_exception_handler(_handle_exception)  # TEST
     app = App('qos')
     await server.run({'qos'}, True, port=PORT, timeout=TIMEOUT)
 

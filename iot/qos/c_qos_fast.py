@@ -16,9 +16,10 @@ from machine import Pin
 from . import local
 gc.collect()
 from iot import client
+from .check_mid import CheckMid
 
 # Optional LED. led=None if not required
-from sys import platform
+from sys import platform, exit, print_exception
 if platform == 'pyboard':  # D series
     from pyb import LED
     led = LED(1)
@@ -27,6 +28,11 @@ else:
     led = Pin(2, Pin.OUT, value=1)  # Optional LED
 # End of optionalLED
 
+def _handle_exception(loop, context):
+    print_exception(context["exception"])
+    exit()
+
+
 class App:
     def __init__(self, verbose):
         self.verbose = verbose
@@ -34,10 +40,7 @@ class App:
                                 local.PORT, local.SSID, local.PW,
                                 local.TIMEOUT, verbose=verbose, led=led)
         self.tx_msg_id = 0
-        self.dupes = 0  # Incoming dupe count
-        self.missing = 0
-        self.last = 0
-        self.rxbuf = []
+        self.cm = CheckMid()  # Check message ID's for dupes, missing etc.
 
     async def start(self):
         self.verbose and print('App awaiting connection.')
@@ -50,22 +53,8 @@ class App:
         while True:
             line = await self.cl.readline()
             data = ujson.loads(line)
-            rxmid = data[0]
-            if rxmid in self.rxbuf:
-                self.dupes += 1
-            else:
-                self.rxbuf.append(rxmid)
+            self.cm(data[0])  # Update statistics
             print('Got', data, 'from server app')
-
-    def count_missed(self):
-        if len(self.rxbuf) >= 25:
-            idx = 0
-            while self.rxbuf[idx] < self.last + 10:
-                idx += 1
-            self.last += 10
-            self.missing += 10 - idx
-            self.rxbuf = self.rxbuf[idx:]
-        return self.missing
 
     # Send [ID, (re)connect count, free RAM, duplicate message count, missed msgcount]
     async def writer(self):
@@ -74,7 +63,7 @@ class App:
             for _ in range(4):
                 gc.collect()
                 data = [self.tx_msg_id, self.cl.connects, gc.mem_free(),
-                        self.dupes, self.count_missed()]
+                        self.cm.dupe, self.cm.miss]
                 self.tx_msg_id += 1
                 await self.cl  # Only launch write if link is up
                 print('Sent', data, 'to server app\n')
@@ -89,6 +78,8 @@ class App:
 app = None
 async def main():
     global app  # For finally clause
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(_handle_exception)
     app = App(verbose=True)
     await app.start()
 

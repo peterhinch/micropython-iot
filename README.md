@@ -636,7 +636,7 @@ This will pause until connectivity has been established. It can be issued at
 any time: if the `Connection` has already been instantiated, that instance will
 be returned. The `Connection` constructor should not be called by applications.
 
-The `Connection` instance:
+#### The `Connection` instance
 
 Methods (asynchronous):
  1. `readline` No args. Pauses until data received. Returns a line.
@@ -655,6 +655,10 @@ Methods (synchronous):
 
 Class Method (synchronous):
  1. `close_all` No args. Closes all sockets: call on exception (e.g. ctrl-c).
+
+Bound variable:
+ 1. `nconns` Maintains a count of (re)connections for information or monitoring
+ of outages.
 
 The `Connection` class is awaitable. If
 ```python

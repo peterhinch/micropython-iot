@@ -15,7 +15,7 @@
 # Under CPython requires CPython 3.8 or later.
 
 import sys
-from .primitives import gmid, isnew  # __init__.py
+from . import gmid, isnew  # __init__.py
 
 upython = sys.implementation.name == 'micropython'
 if upython:
@@ -160,6 +160,7 @@ class Connection:
         self._cl_id = client_id
         self._verbose = verbose
         self._newlist = bytearray(32)  # Per-client de-dupe list
+        self.nconns = 0  # Reconnect count (information only)
         Connection._conns[client_id] = self
         try:
             Connection._expected.remove(client_id)
@@ -243,10 +244,12 @@ class Connection:
             # Fast version of await self._status_coro()
             while self._sock is None:
                 await asyncio.sleep(TIM_TINY)
+            self.nconns += 1  # For test scripts
             start = time.time()
             while self():
                 try:
                     d = self._sock.recv(4096)  # bytes object
+                    #print('TEST', d)
                 except OSError as e:
                     err = e.args[0]
                     if err == errno.EAGAIN:  # Would block: try later

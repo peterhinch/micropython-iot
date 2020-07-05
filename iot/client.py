@@ -22,10 +22,8 @@ import network
 import utime
 import machine
 import uerrno as errno
-from .primitives import gmid, isnew, launch, SetByte  # __init__.py
-Event = asyncio.Event
-Lock = asyncio.Lock
-
+from . import gmid, isnew, SetByte  # __init__.py
+from .primitives import launch
 gc.collect()
 from micropython import const
 
@@ -103,8 +101,8 @@ class Client:
             import esp
             esp.sleep_type(esp.SLEEP_NONE)  # Improve connection integrity at cost of power consumption.
 
-        self._evfail = Event()
-        self._s_lock = Lock()  # For internal send conflict.
+        self._evfail = asyncio.Event()
+        self._s_lock = asyncio.Lock()  # For internal send conflict.
         self._last_wr = utime.ticks_ms()
         self._lineq = deque((), 20, True)  # 20 entries, throw on overflow
         self.connects = 0  # Connect count for test purposes/app access
@@ -185,9 +183,8 @@ class Client:
             # After an outage wait until something is received from server
             # before we send.
             await self
-            async with self._s_lock:
-                if await self._send(line):
-                    return
+            if await self._send(line):
+                return
 
             # send fail. _send has triggered _evfail. Await response.
             while self():
@@ -263,14 +260,7 @@ class Client:
                 tsk_reader = asyncio.create_task(self._reader())
                 # Server reads ID immediately, but a brief pause is probably wise.
                 await asyncio.sleep_ms(50)
-                # No need for lock yet.
-                try:
-                    if not await self._send(self._my_id):
-                        raise OSError
-                except OSError:
-                    if init:
-                        await self.bad_server()
-                else:
+                if await self._send(self._my_id):
                     tsk_ka = asyncio.create_task(self._keepalive())
                     if self._concb is not None:
                         # apps might need to know connection to the server acquired
@@ -284,6 +274,8 @@ class Client:
                     if self._concb is not None:
                         # apps might need to know if they lost connection to the server
                         launch(self._concb, False, *self._concbargs)
+                elif init:
+                    await self.bad_server()
             finally:
                 init = False
                 self._close()  # Close socket but not wdt
@@ -325,16 +317,14 @@ class Client:
                 self.connects += 1  # update connect count
 
     async def _sendack(self, mid):
-        async with self._s_lock:
-            await self._send('{:02x}\n'.format(mid))
+        await self._send('{:02x}\n'.format(mid))
 
     async def _keepalive(self):
         while True:
             due = self._tim_ka - utime.ticks_diff(utime.ticks_ms(), self._last_wr)
             if due <= 0:
-                async with self._s_lock:
-                    # error sets ._evfail, .run cancels this coro
-                    await self._send(b'\n')
+                # error sets ._evfail, .run cancels this coro
+                await self._send(b'\n')
             else:
                 await asyncio.sleep_ms(due)
 
@@ -376,26 +366,27 @@ class Client:
                 line = b''.join((line, d)) if line else d
 
     async def _send(self, d):  # Write a line to socket.
-        start = utime.ticks_ms()
-        while d:
-            try:
-                ns = self._sock.send(d)  # OSError if client closes socket
-            except OSError as e:
-                err = e.args[0]
-                if err == errno.EAGAIN:  # Would block: await server read
-                    await asyncio.sleep_ms(100)
+        async with self._s_lock:
+            start = utime.ticks_ms()
+            while d:
+                try:
+                    ns = self._sock.send(d)  # OSError if client closes socket
+                except OSError as e:
+                    err = e.args[0]
+                    if err == errno.EAGAIN:  # Would block: await server read
+                        await asyncio.sleep_ms(100)
+                    else:
+                        self._verbose and print('_send fail. Disconnect')
+                        self._evfail.set()
+                        return False  # peer disconnect
                 else:
-                    self._verbose and print('_send fail. Disconnect')
-                    self._evfail.set()
-                    return False  # peer disconnect
-            else:
-                d = d[ns:]
-                if d:  # Partial write: pause
-                    await asyncio.sleep_ms(20)
-                if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
-                    self._verbose and print('_send fail. Timeout.')
-                    self._evfail.set()
-                    return False
+                    d = d[ns:]
+                    if d:  # Partial write: pause
+                        await asyncio.sleep_ms(20)
+                    if utime.ticks_diff(utime.ticks_ms(), start) > self._to:
+                        self._verbose and print('_send fail. Timeout.')
+                        self._evfail.set()
+                        return False
 
-        self._last_wr = utime.ticks_ms()
+            self._last_wr = utime.ticks_ms()
         return True
