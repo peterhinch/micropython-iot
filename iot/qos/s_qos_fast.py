@@ -54,12 +54,12 @@ class App:
             outages = self.conn.nconns - 1
             ut = (time.time() - st) / 3600  # Uptime in hrs
             print('Uptime {:6.2f}hr outages {}'.format(ut, outages))
-            print('Dupes ignored {} local {} remote. '.format(cm.dupe, data[3]), end='')
-            print('Missed msg {} local {} remote.'.format(cm.miss, data[4]))
+            print('Dupes ignored {} local {} remote. '.format(cm.tot_dupe, data[3]), end='')
+            print('Missed msg {} local {} remote.'.format(cm.tot_miss, data[4]), end='')
+            print('Client reboots', cm.bcnt)
 
     async def reader(self):
         print('Started reader')
-        cm = CheckMid()  # Check message ID's for dupes, missing etc.
         while True:
             line = await self.conn.readline()  # Pause in event of outage
             data = json.loads(line)
