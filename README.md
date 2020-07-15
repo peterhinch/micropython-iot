@@ -237,7 +237,7 @@ Copying may be done using any tool but I recommend
 directory on your PC containing the clone, start `rshell` and issue (adapting
 the boot device for your platform):
 ```
-cp -r iot /pyboard/iot/
+rsync iot /pyboard/iot
 ```
 On ESP8266, unless frozen, it is necessary to delete `client.py` to force the
 use of `client.mpy`:
