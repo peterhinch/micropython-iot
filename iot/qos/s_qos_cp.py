@@ -78,8 +78,6 @@ class App:
             await asyncio.sleep(5)
 
 async def main():
-    loop = asyncio.get_event_loop()  # TEST
-    loop.set_exception_handler(_handle_exception)  # TEST
     app = App('qos')
     await server.run({'qos'}, True, port=PORT, timeout=TIMEOUT)
 
