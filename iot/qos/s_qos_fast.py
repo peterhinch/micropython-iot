@@ -83,7 +83,7 @@ class App:
 
 async def main():
     app = App('qos')
-    await server/.run({'qos'}, True, port=PORT, timeout=TIMEOUT)
+    await server.run({'qos'}, True, port=PORT, timeout=TIMEOUT)
 
 def run():
     try:
