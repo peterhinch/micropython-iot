@@ -36,7 +36,7 @@ class App:
         self.conn = None  # Connection instance
         self.tx_msg_id = 0
         self.cm = CheckMid()  # Check message ID's for dupes, missing etc.
-        self.data = [0, 0, 0, 0, 0]  # Data from remote
+        self.data = [0, 0, 0, 0, 0, 0]  # Data from remote
         asyncio.create_task(self.start())
 
     async def start(self):
@@ -45,16 +45,16 @@ class App:
         asyncio.create_task(self.reader())
         asyncio.create_task(self.writer())
         st = time.time()
-        cm = self.cm
-        data = self.data
         while True:  # Peiodic reports
             await asyncio.sleep(30)
+            data = self.data
+            cm = self.cm
             outages = self.conn.nconns - 1
             ut = (time.time() - st) / 3600  # Uptime in hrs
             print('Uptime {:6.2f}hr outages {}'.format(ut, outages))
             print('Dupes ignored {} local {} remote. '.format(cm.dupe, data[3]), end='')
             print('Missed msg {} local {} remote.'.format(cm.miss, data[4]), end='')
-            print('Out of order msg {} Client reboots {}'.format(cm.oord, cm.bcnt))
+            print('Out of order msg {} Client reboots {} Client uptime {:6.2f}hr'.format(cm.oord, cm.bcnt, data[5]/3600))
 
     async def reader(self):
         print('Started reader')

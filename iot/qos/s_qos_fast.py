@@ -47,10 +47,10 @@ class App:
         asyncio.create_task(self.reader())
         asyncio.create_task(self.writer())
         st = time.time()
-        cm = self.cm
-        data = self.data
         while True:
             await asyncio.sleep(30)
+            data = self.data
+            cm = self.cm
             outages = self.conn.nconns - 1
             ut = (time.time() - st) / 3600  # Uptime in hrs
             print('Uptime {:6.2f}hr outages {}'.format(ut, outages))

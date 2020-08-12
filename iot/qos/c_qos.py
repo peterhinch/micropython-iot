@@ -12,6 +12,7 @@ import uasyncio as asyncio
 gc.collect()
 import ujson
 from machine import Pin
+import time
 from . import local
 gc.collect()
 from iot import client
@@ -59,10 +60,12 @@ class App:
     # Send [ID, (re)connect count, free RAM, duplicate message count, missed msgcount]
     async def writer(self):
         self.verbose and print('Started writer')
+        st = time.time()
         while True:
             gc.collect()
+            ut = time.time() - st  # Uptime in secs
             data = [self.tx_msg_id, self.cl.connects, gc.mem_free(),
-                    self.cm.dupe, self.cm.miss]
+                    self.cm.dupe, self.cm.miss, ut]
             self.tx_msg_id += 1
             print('Sent', data, 'to server app\n')
             dstr = ujson.dumps(data)
