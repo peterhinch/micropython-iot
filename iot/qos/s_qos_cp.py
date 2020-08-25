@@ -54,7 +54,8 @@ class App:
             print('Uptime {:6.2f}hr outages {}'.format(ut, outages))
             print('Dupes ignored {} local {} remote. '.format(cm.dupe, data[3]), end='')
             print('Missed msg {} local {} remote.'.format(cm.miss, data[4]), end='')
-            print('Out of order msg {} Client reboots {} Client uptime {:6.2f}hr'.format(cm.oord, cm.bcnt, data[5]/3600))
+            print('Out of order msg {} local {} remote.'.format(cm.oord, data[5]))
+            print('Client reboots {} Client uptime {:6.2f}hr'.format(cm.bcnt, data[6]/3600))
 
     async def reader(self):
         print('Started reader')
