@@ -45,8 +45,7 @@ class App:
     async def start(self):
         self.verbose and print('App awaiting connection.')
         await self.cl
-        for _ in range(3):
-            asyncio.create_task(self.writer())
+        asyncio.create_task(self.writer())
         await self.reader()
 
     async def reader(self):
