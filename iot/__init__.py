@@ -27,20 +27,3 @@ def isnew(mid, lst=bytearray(32)):
     lst[idx] |= bit
     lst[(idx + 16 & 0x1f)] = 0
     return res
-
-# Minimal implementation of set for integers in range 0-255
-class SetByte:
-    def __init__(self):
-        self._ba = bytearray(32)
-
-    def __bool__(self):
-        return any(self._ba)
-
-    def __contains__(self, i):
-        return (self._ba[i >> 3] & 1 << (i & 7)) > 0
-
-    def discard(self, i):
-        self._ba[i >> 3] &= ~(1 << (i &7))
-
-    def add(self, i):
-        self._ba[i >> 3] |= 1 << (i & 7)

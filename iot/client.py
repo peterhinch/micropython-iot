@@ -13,7 +13,6 @@ import gc
 
 gc.collect()
 import usocket as socket
-from ucollections import deque
 import uasyncio as asyncio
 
 gc.collect()
@@ -22,8 +21,9 @@ import network
 import utime
 import machine
 import uerrno as errno
-from . import gmid, isnew, SetByte  # __init__.py
+from . import gmid, isnew  # __init__.py
 from .primitives import launch
+from .primitives.queue import Queue, QueueFull
 gc.collect()
 from micropython import const
 
@@ -33,6 +33,42 @@ WDT_CB = const(-3)
 # Message ID generator. Only need one instance on client.
 getmid = gmid()
 gc.collect()
+
+# Minimal implementation of set for integers in range 0-255
+# Asynchronous version has efficient wait_empty and has_not methods
+# based on Events rather than polling.
+
+
+class ASetByte:
+    def __init__(self):
+        self._ba = bytearray(32)
+        self._eve = asyncio.Event()
+        self._eve.set()  # Empty event initially set
+        self._evdis = asyncio.Event()  # Discard event
+
+    def __bool__(self):
+        return any(self._ba)
+
+    def __contains__(self, i):
+        return (self._ba[i >> 3] & 1 << (i & 7)) > 0
+
+    def add(self, i):
+        self._eve.clear()
+        self._ba[i >> 3] |= 1 << (i & 7)
+
+    def discard(self, i):
+        self._ba[i >> 3] &= ~(1 << (i & 7))
+        self._evdis.set()
+        if not any(self._ba):
+            self._eve.set()
+
+    async def wait_empty(self):  # Pause until empty
+        await self._eve.wait()
+
+    async def has_not(self, i):  # Pause until i not in set
+        while i in self:
+            await self._evdis.wait()  # Pause until something is discarded
+            self._evdis.clear()
 
 
 class Client:
@@ -46,7 +82,6 @@ class Client:
         self._pw = pw
         self._port = port
         self._to = timeout  # Client and server timeout
-        self._tim_short = timeout // 10
         self._tim_ka = timeout // 4  # Keepalive interval
         self._concb = conn_cb
         self._concbargs = () if conn_cb_args is None else conn_cb_args
@@ -99,38 +134,35 @@ class Client:
         gc.collect()
         if platform == 'esp8266':
             import esp
-            esp.sleep_type(esp.SLEEP_NONE)  # Improve connection integrity at cost of power consumption.
+            # Improve connection integrity at cost of power consumption.
+            esp.sleep_type(esp.SLEEP_NONE)
 
-        self._evfail = asyncio.Event()
+        self._evfail = asyncio.Event()  # Set by any comms failure
+        self._evok = asyncio.Event()  # Set by 1st successful read
         self._s_lock = asyncio.Lock()  # For internal send conflict.
         self._last_wr = utime.ticks_ms()
-        self._lineq = deque((), 20, True)  # 20 entries, throw on overflow
+        self._lineq = Queue(20)  # 20 entries
         self.connects = 0  # Connect count for test purposes/app access
         self._sock = None
-        self._ok = False  # Set after 1st successful read
-        self._acks_pend = SetByte()  # ACKs which are expected to be received
+        self._acks_pend = ASetByte()  # ACKs which are expected to be received
         gc.collect()
         asyncio.create_task(self._run())
 
     # **** API ****
     def __iter__(self):  # Await a connection
-        while not self():
-            yield from asyncio.sleep_ms(self._tim_short)  # V3 note: this syntax works.
+        yield from self._evok.wait()  # V3 note: this syntax works.
 
     def status(self):
-        return self._ok
+        return self._evok.is_set()
 
     __call__ = status
 
     async def readline(self):
-        while not self._lineq:
-            await asyncio.sleep(0)
-        return self._lineq.popleft()
+        return await self._lineq.get()
 
     async def write(self, buf, qos=True, wait=True):
         if qos and wait:  # Disallow concurrent writes
-            while self._acks_pend:
-                await asyncio.sleep_ms(50)
+            await self._acks_pend.wait_empty()
         # Prepend message ID to a copy of buf
         fstr = '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
         mid = next(getmid)
@@ -182,29 +214,28 @@ class Client:
         while True:
             # After an outage wait until something is received from server
             # before we send.
-            await self
+            await self._evok.wait()
             if await self._send(line):
                 return
 
-            # send fail. _send has triggered _evfail. Await response.
-            while self():
-                await asyncio.sleep_ms(self._tim_short)
+            # send fail. _send has triggered _evfail. .run clears _evok.
+            await asyncio.sleep_ms(0)  # Ensure .run is scheduled
+            assert not self._evok.is_set()  # TEST
 
     # Handle qos. Retransmit until matching ACK received.
     # ACKs typically take 200-400ms to arrive.
     async def _do_qos(self, mid, line):
         while True:
             # Wait for any outage to clear
-            await self
+            await self._evok.wait()
             # Wait for the matching ACK.
-            tstart = utime.ticks_ms()
-            while utime.ticks_diff(utime.ticks_ms(), tstart) < self._to:
-                await asyncio.sleep_ms(self._tim_short)
-                if mid not in self._acks_pend:
-                    return  # ACK was received
-            # ACK was not received. Re-send.
-            await self._write(line)
-            self._verbose and print('Repeat', line, 'to server app')
+            try:
+                await asyncio.wait_for_ms(self._acks_pend.has_not(mid), self._to)
+            except asyncio.TimeoutError:  # Ack was not received - re-send
+                await self._write(line)
+                self._verbose and print('Repeat', line, 'to server app')
+            else:
+                return  # Got ack
 
     # Make an attempt to connect to WiFi. May not succeed.
     async def _connect(self, s):
@@ -246,7 +277,8 @@ class Client:
             self._sock = socket.socket()
             self._evfail.clear()
             try:
-                serv = socket.getaddrinfo(self._server, self._port)[0][-1]  # server read
+                serv = socket.getaddrinfo(self._server, self._port)[
+                    0][-1]  # server read
                 # If server is down OSError e.args[0] = 111 ECONNREFUSED
                 self._sock.connect(serv)
             except OSError as e:
@@ -266,7 +298,7 @@ class Client:
                         # apps might need to know connection to the server acquired
                         launch(self._concb, True, *self._concbargs)
                     await self._evfail.wait()  # Pause until something goes wrong
-                    self._ok = False
+                    self._evok.clear()
                     tsk_reader.cancel()
                     tsk_ka.cancel()
                     await asyncio.sleep_ms(0)  # wait for cancellation
@@ -281,7 +313,8 @@ class Client:
                 self._close()  # Close socket but not wdt
                 s.disconnect()
                 self._feed(0)
-                await asyncio.sleep_ms(self._to * 2)  # Ensure server detects outage
+                # Ensure server detects outage
+                await asyncio.sleep_ms(self._to * 2)
                 while s.isconnected():
                     await asyncio.sleep(1)
 
@@ -308,8 +341,8 @@ class Client:
                 isnew(-1)  # Clear down rx message record
             if isnew(mid):
                 try:
-                    self._lineq.append(line[2:].decode())
-                except IndexError:
+                    self._lineq.put_nowait(line[2:].decode())
+                except QueueFull:
                     self._verbose and print('_reader fail. Overflow.')
                     self._evfail.set()
                     return
@@ -321,7 +354,8 @@ class Client:
 
     async def _keepalive(self):
         while True:
-            due = self._tim_ka - utime.ticks_diff(utime.ticks_ms(), self._last_wr)
+            due = self._tim_ka - \
+                utime.ticks_diff(utime.ticks_ms(), self._last_wr)
             if due <= 0:
                 # error sets ._evfail, .run cancels this coro
                 await self._send(b'\n')
@@ -337,7 +371,7 @@ class Client:
         start = utime.ticks_ms()
         while True:
             if line.endswith(b'\n'):
-                self._ok = True  # Got at least 1 packet after an outage.
+                self._evok.set()  # Got at least 1 packet after an outage.
                 if len(line) > 1:
                     return line
                 # Got a keepalive: discard, reset timers, toggle LED.
