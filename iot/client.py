@@ -220,7 +220,6 @@ class Client:
 
             # send fail. _send has triggered _evfail. .run clears _evok.
             await asyncio.sleep_ms(0)  # Ensure .run is scheduled
-            assert not self._evok.is_set()  # TEST
 
     # Handle qos. Retransmit until matching ACK received.
     # ACKs typically take 200-400ms to arrive.

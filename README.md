@@ -462,7 +462,7 @@ Methods (asynchronous):
  1. `readline` No args. Pauses until data received. Returns a line.
  2. `write` Args: `buf`, `qos=True`, `wait=True`. `buf` holds a line of text.  
  If `qos` is set, the system guarantees delivery. If it is clear messages may
- (rarely) be lost in the event of an outage.__
+ (rarely) be lost in the event of an outage.  
  The `wait` arg determines the behaviour when multiple concurrent writes are
  launched with `qos` set. See [Quality of service](./README.md#7-quality-of-service).
 
