@@ -42,8 +42,6 @@ gc.collect()
 class ASetByte:
     def __init__(self):
         self._ba = bytearray(32)
-        self._eve = asyncio.Event()
-        self._eve.set()  # Empty event initially set
         self._evdis = asyncio.Event()  # Discard event
 
     def __bool__(self):
@@ -53,17 +51,11 @@ class ASetByte:
         return (self._ba[i >> 3] & 1 << (i & 7)) > 0
 
     def add(self, i):
-        self._eve.clear()
         self._ba[i >> 3] |= 1 << (i & 7)
 
     def discard(self, i):
         self._ba[i >> 3] &= ~(1 << (i & 7))
         self._evdis.set()
-        if not any(self._ba):
-            self._eve.set()
-
-    async def wait_empty(self):  # Pause until empty
-        await self._eve.wait()
 
     async def has_not(self, i):  # Pause until i not in set
         while i in self:
@@ -140,6 +132,7 @@ class Client:
         self._evfail = asyncio.Event()  # Set by any comms failure
         self._evok = asyncio.Event()  # Set by 1st successful read
         self._s_lock = asyncio.Lock()  # For internal send conflict.
+        self._w_lock = asyncio.Lock()  # For .write rate limit
         self._last_wr = utime.ticks_ms()
         self._lineq = Queue(20)  # 20 entries
         self.connects = 0  # Connect count for test purposes/app access
@@ -162,15 +155,19 @@ class Client:
 
     async def write(self, buf, qos=True, wait=True):
         if qos and wait:  # Disallow concurrent writes
-            await self._acks_pend.wait_empty()
-        # Prepend message ID to a copy of buf
-        fstr = '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
-        mid = next(getmid)
-        self._acks_pend.add(mid)
-        buf = fstr.format(mid, buf)
-        await self._write(buf)
-        if qos:  # Return when an ACK received
-            await self._do_qos(mid, buf)
+            await self._w_lock.acquire()
+        try:  # In case of cancellation/timeout
+            # Prepend message ID to a copy of buf
+            fstr = '{:02x}{}' if buf.endswith('\n') else '{:02x}{}\n'
+            mid = next(getmid)
+            self._acks_pend.add(mid)
+            buf = fstr.format(mid, buf)
+            await self._write(buf)
+            if qos:  # Return when an ACK received
+                await self._do_qos(mid, buf)
+        finally:
+            if qos and wait:
+                self._w_lock.release()
 
     def close(self):
         self._close()  # Close socket and WDT
