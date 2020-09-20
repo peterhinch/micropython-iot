@@ -120,6 +120,7 @@ but one which persists through outages and offers guaranteed message delivery.
  8. [Performance](./README.md#8-performance)  
   8.1 [Latency and throughput](./README.md#81-latency-and-throughput)  
   8.2 [Client RAM utilisation](./README.md#82-client-ram-utilisation)  
+  8.3 [Platform reliability](./README.md#83-platform-reliability)  
  9. [Extension to the Pyboard](./README.md#9-extension-to-the-pyboard)  
  10. [How it works](./README.md#10-how-it-works)  
   10.1 [Interface and client module](./README.md#101-interface-and-client-module)  
@@ -833,6 +834,22 @@ reconnections.
 On ESP8266 with a current (June 2020) daily build the demo reports over 20KB
 free. Free RAM of 25.9KB was achieved with compiled firmware with frozen 
 bytecode as per [Installation](./README.md#31-installation).
+
+## 8.3 Platform reliability
+
+In extensive testing the Pyboard D performed impeccably: no failures of any
+kind were observed in weeks of testing through over 1000 outages.
+
+ESP32 was prone to occasional spontaneous reboots. It would typically run for a
+few days through multiple WiFi outages before rebooting.
+
+ESP8266 still occasionally crashes and it is recommended to use the watchdog
+feature to reboot it should this occur.
+
+It would take a very long time to achieve more than a subjective impression of
+the effectof usage options on failure rate. The precautionary principle
+suggests maximising free ram with frozen bytecode on ESP8266 and avoiding
+concurrent `qos==1` writes on ESPx platforms.
 
 ###### [Contents](./README.md#1-contents)
 
